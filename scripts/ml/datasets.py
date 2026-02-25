@@ -55,8 +55,10 @@ def read_keyboard_csv(path: str) -> Optional[np.ndarray]:
     arr = df[cols].astype(str).values
     res = np.zeros_like(arr, dtype=np.float32)
     for i in range(arr.shape[1]):
-        c = arr[:, i]
-        v = np.where(c == "True", 1.0, np.where(c == "False", 0.0, c.astype(np.float32)))
+        c = arr[:, i].astype(str)
+        c = np.where(c == "True", "1.0", c)
+        c = np.where(c == "False", "0.0", c)
+        v = c.astype(np.float32)
         res[:, i] = v
     return res
 
@@ -68,8 +70,7 @@ def read_mouse_csv(path: str, standardize: bool = True) -> Optional[np.ndarray]:
     cols = ["FIRE", "pitch", "yaw"]
     if not set(cols).issubset(df.columns):
         return None
-    fire = df["FIRE"].astype(str).values
-    fire = np.where(fire == "True", 1.0, np.where(fire == "False", 0.0, fire.astype(np.float32))).astype(np.float32)
+    fire = df["FIRE"].map({"True": 1.0, "False": 0.0}).astype(np.float32).values
     pitch = df["pitch"].astype(np.float32).values
     yaw = df["yaw"].astype(np.float32).values
     if standardize:

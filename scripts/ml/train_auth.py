@@ -4,10 +4,11 @@ import argparse
 import numpy as np
 import torch
 import torch.nn as nn
+from sklearn.metrics import roc_auc_score
 from torch.utils.data import TensorDataset, DataLoader
 
-from .datasets import list_name_dirs, list_single_for_name, list_pairs_for_name, read_sample, read_unified_sample
-from .models import UnifiedModel, FusionModel
+from scripts.ml.datasets import list_name_dirs, list_single_for_name, list_pairs_for_name, read_sample, read_unified_sample
+from scripts.ml.models import UnifiedModel, FusionModel
 
 
 def set_seed(s: int):
@@ -16,7 +17,7 @@ def set_seed(s: int):
     torch.manual_seed(s)
     torch.cuda.manual_seed_all(s)
 
-
+# 怎么处理unified情况--未知--list_single_for_name没有处理mode为unified时的情况
 def sample_auth_sets(processed_root: str, target_name: str, mode: str, pos_n: int = 90, neg_n: int = 90):
     names = list(list_name_dirs(processed_root).keys())
     names = [n for n in names if n != target_name]
@@ -98,103 +99,299 @@ def split_data(x_pos, x_neg):
     return x_train, y_train, x_val, y_val, x_test, y_test
 
 
-def train_binary_unified(x_train, y_train, x_val, y_val, x_test, y_test, input_dim, device, epochs=50, lr=1e-3, bsz=32):
+def train_binary_unified(x_train, y_train, x_val, y_val, x_test, y_test, input_dim, device, epochs=50, lr=1e-3, bsz=32, patience=5):
     model = UnifiedModel(input_dim=input_dim).to(device)
+
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     loss_fn = nn.BCEWithLogitsLoss()
-    train_ds = TensorDataset(x_train.to(device), y_train.to(device))
-    val_ds = TensorDataset(x_val.to(device), y_val.to(device))
-    test_ds = TensorDataset(x_test.to(device), y_test.to(device))
+
+    # ✅ 不提前放 GPU
+    train_ds = TensorDataset(x_train, y_train)
+    val_ds   = TensorDataset(x_val,   y_val)
+    test_ds  = TensorDataset(x_test,  y_test)
+
     train_loader = DataLoader(train_ds, batch_size=bsz, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=bsz)
-    best_val = None
+    val_loader   = DataLoader(val_ds, batch_size=bsz)
+    test_loader  = DataLoader(test_ds, batch_size=bsz)
+
+    best_val_loss = float("inf")
     best_state = None
+    early_stop_counter = 0
+
+    # =========================
+    # Training Loop
+    # =========================
     for ep in range(epochs):
+
+        # ===== Train =====
         model.train()
+        train_loss_list = []
+        train_correct = 0
+        train_total = 0
+
         for xb, yb in train_loader:
+
+            xb = xb.to(device)
+            yb = yb.to(device)
+
             opt.zero_grad()
+
             logits = model(xb)
             loss = loss_fn(logits, yb)
+
             loss.backward()
             opt.step()
+
+            train_loss_list.append(loss.item())
+
+            probs = torch.sigmoid(logits)
+            preds = (probs > 0.5).float()
+
+            train_correct += (preds == yb).sum().item()
+            train_total += yb.numel()
+
+        train_loss = float(np.mean(train_loss_list))
+        train_acc = train_correct / train_total
+
+
+        # ===== Validation =====
         model.eval()
+        val_loss_list = []
+        val_correct = 0
+        val_total = 0
+
         with torch.no_grad():
-            val_losses = []
             for xb, yb in val_loader:
+
+                xb = xb.to(device)
+                yb = yb.to(device)
+
                 logits = model(xb)
                 loss = loss_fn(logits, yb)
-                val_losses.append(loss.item())
-        v = float(np.mean(val_losses)) if val_losses else None
-        if best_val is None or (v is not None and v < best_val):
-            best_val = v
+
+                val_loss_list.append(loss.item())
+
+                probs = torch.sigmoid(logits)
+                preds = (probs > 0.5).float()
+
+                val_correct += (preds == yb).sum().item()
+                val_total += yb.numel()
+
+        val_loss = float(np.mean(val_loss_list))
+        val_acc = val_correct / val_total
+
+        print(f"Epoch [{ep+1:02d}/{epochs}] "
+              f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} || "
+              f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
+
+        # ===== Early Stopping =====
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
             best_state = {k: v.cpu() for k, v in model.state_dict().items()}
+            early_stop_counter = 0
+        else:
+            early_stop_counter += 1
+
+        if early_stop_counter >= patience:
+            print("Early stopping triggered.")
+            break
+
+
+    # =========================
+    # Load Best Model
+    # =========================
     if best_state is not None:
         model.load_state_dict(best_state)
+
+    # =========================
+    # Test Evaluation
+    # =========================
     model.eval()
+    preds = []
+    gts = []
+    prob_list = []
+
     with torch.no_grad():
-        test_loader = DataLoader(test_ds, batch_size=bsz)
-        preds = []
-        gts = []
         for xb, yb in test_loader:
+
+            xb = xb.to(device)
+            yb = yb.to(device)
+
             logits = model(xb)
-            p = torch.sigmoid(logits)
-            preds.extend((p > 0.5).cpu().numpy().tolist())
+            probs = torch.sigmoid(logits)
+
+            preds.extend((probs > 0.5).cpu().numpy().tolist())
+            prob_list.extend(probs.cpu().numpy().tolist())
             gts.extend(yb.cpu().numpy().tolist())
-        acc = float(np.mean(np.array(preds) == np.array(gts))) if preds else 0.0
-    return model, acc
+
+    preds = np.array(preds)
+    gts = np.array(gts)
+    prob_list = np.array(prob_list)
+
+    test_acc = float(np.mean(preds == gts))
+
+    try:
+        test_auc = roc_auc_score(gts, prob_list)
+    except:
+        test_auc = 0.0
+
+    print(f"\nFinal Test Acc: {test_acc:.4f}")
+    print(f"Final Test AUC: {test_auc:.4f}")
+
+    return model, test_acc
 
 
-def train_binary_fusion(kb_train, ms_train, y_train, kb_val, ms_val, y_val, kb_test, ms_test, y_test, kb_dim, ms_dim, device, epochs=50, lr=1e-3, bsz=32):
+def train_binary_fusion(kb_train, ms_train, y_train, kb_val, ms_val, y_val, kb_test, ms_test, y_test, kb_dim, ms_dim, device, epochs=50, lr=1e-3, bsz=32, patience=5):
     model = FusionModel(kb_input_dim=kb_dim, ms_input_dim=ms_dim).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     loss_fn = nn.BCEWithLogitsLoss()
-    train_ds = TensorDataset(kb_train.to(device), ms_train.to(device), y_train.to(device))
-    val_ds = TensorDataset(kb_val.to(device), ms_val.to(device), y_val.to(device))
-    test_ds = TensorDataset(kb_test.to(device), ms_test.to(device), y_test.to(device))
+
+    # ✅ 不提前放到 GPU
+    train_ds = TensorDataset(kb_train, ms_train, y_train)
+    val_ds   = TensorDataset(kb_val,   ms_val,   y_val)
+    test_ds  = TensorDataset(kb_test,  ms_test,  y_test)
+
     train_loader = DataLoader(train_ds, batch_size=bsz, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=bsz)
-    best_val = None
+    val_loader   = DataLoader(val_ds, batch_size=bsz)
+    test_loader  = DataLoader(test_ds, batch_size=bsz)
+
+    best_val_loss = float("inf")
     best_state = None
+    early_stop_counter = 0
+
+    # =========================
+    # Training Loop
+    # =========================
     for ep in range(epochs):
+
+        # ===== Train =====
         model.train()
+        train_loss_list = []
+        train_correct = 0
+        train_total = 0
+
         for kb_x, ms_x, yb in train_loader:
+
+            kb_x = kb_x.to(device)
+            ms_x = ms_x.to(device)
+            yb   = yb.to(device)
+
             opt.zero_grad()
+
             logits = model(kb_x, ms_x)
             loss = loss_fn(logits, yb)
+
             loss.backward()
             opt.step()
+
+            train_loss_list.append(loss.item())
+
+            probs = torch.sigmoid(logits)
+            preds = (probs > 0.5).float()
+
+            train_correct += (preds == yb).sum().item()
+            train_total += yb.numel()
+
+        train_loss = float(np.mean(train_loss_list))
+        train_acc = train_correct / train_total
+
+
+        # ===== Validation =====
         model.eval()
+        val_loss_list = []
+        val_correct = 0
+        val_total = 0
+
         with torch.no_grad():
-            val_losses = []
             for kb_x, ms_x, yb in val_loader:
+
+                kb_x = kb_x.to(device)
+                ms_x = ms_x.to(device)
+                yb   = yb.to(device)
+
                 logits = model(kb_x, ms_x)
                 loss = loss_fn(logits, yb)
-                val_losses.append(loss.item())
-        v = float(np.mean(val_losses)) if val_losses else None
-        if best_val is None or (v is not None and v < best_val):
-            best_val = v
+
+                val_loss_list.append(loss.item())
+
+                probs = torch.sigmoid(logits)
+                preds = (probs > 0.5).float()
+
+                val_correct += (preds == yb).sum().item()
+                val_total += yb.numel()
+
+        val_loss = float(np.mean(val_loss_list))
+        val_acc = val_correct / val_total
+
+        print(f"Epoch [{ep+1:02d}/{epochs}] "
+              f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} || "
+              f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
+
+        # ===== Early Stopping =====
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
             best_state = {k: v.cpu() for k, v in model.state_dict().items()}
+            early_stop_counter = 0
+        else:
+            early_stop_counter += 1
+
+        if early_stop_counter >= patience:
+            print("Early stopping triggered.")
+            break
+
+    # =========================
+    # Load Best Model
+    # =========================
     if best_state is not None:
         model.load_state_dict(best_state)
+
+    # =========================
+    # Test Evaluation
+    # =========================
     model.eval()
+    preds = []
+    gts = []
+    prob_list = []
+
     with torch.no_grad():
-        test_loader = DataLoader(test_ds, batch_size=bsz)
-        preds = []
-        gts = []
         for kb_x, ms_x, yb in test_loader:
+
+            kb_x = kb_x.to(device)
+            ms_x = ms_x.to(device)
+            yb   = yb.to(device)
+
             logits = model(kb_x, ms_x)
-            p = torch.sigmoid(logits)
-            preds.extend((p > 0.5).cpu().numpy().tolist())
+            probs = torch.sigmoid(logits)
+
+            preds.extend((probs > 0.5).cpu().numpy().tolist())
+            prob_list.extend(probs.cpu().numpy().tolist())
             gts.extend(yb.cpu().numpy().tolist())
-        acc = float(np.mean(np.array(preds) == np.array(gts))) if preds else 0.0
-    return model, acc
+
+    preds = np.array(preds)
+    gts = np.array(gts)
+    prob_list = np.array(prob_list)
+
+    test_acc = float(np.mean(preds == gts))
+
+    # AUC（更适合 authentication）
+    try:
+        test_auc = roc_auc_score(gts, prob_list)
+    except:
+        test_auc = 0.0
+
+    print(f"\nFinal Test Acc: {test_acc:.4f}")
+    print(f"Final Test AUC: {test_auc:.4f}")
+
+    return model, test_acc
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--processed-root", type=str, default=os.path.join("d:\\", "Project", "Research", "processed_data"))
-    parser.add_argument("--target-name", type=str, required=True)
-    parser.add_argument("--mode", type=str, choices=["keyboard", "mouse", "unified", "fusion"], required=True)
+    # parser.add_argument("--target-name", type=str, required=True)
+    parser.add_argument("--target-name", type=str, default="ropz")
+    # parser.add_argument("--mode", type=str, choices=["keyboard", "mouse", "unified", "fusion"], required=True)
+    parser.add_argument("--mode", type=str, default="keyboard")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--lr", type=float, default=1e-3)
