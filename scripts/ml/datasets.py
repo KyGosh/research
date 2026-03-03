@@ -19,11 +19,49 @@ def list_name_dirs(processed_root: str) -> Dict[str, Dict[str, str]]:
     return res
 
 
+def list_maps(processed_root: str) -> List[str]:
+    maps = []
+    for d in os.listdir(processed_root):
+        p = os.path.join(processed_root, d)
+        if not os.path.isdir(p):
+            continue
+        if re.match(r"^map\d+$", d):
+            maps.append(d)
+    maps.sort(key=lambda x: int(re.findall(r"\d+", x)[0]) if re.findall(r"\d+", x) else 0)
+    return maps
+
+
+def list_name_dirs_in_map(processed_root: str, map_dir: str) -> Dict[str, Dict[str, str]]:
+    res: Dict[str, Dict[str, str]] = {}
+    base_map = os.path.join(processed_root, map_dir)
+    if not os.path.isdir(base_map):
+        return res
+    for n in os.listdir(base_map):
+        base = os.path.join(base_map, n)
+        if not os.path.isdir(base):
+            continue
+        kb = os.path.join(base, "keyboard")
+        ms = os.path.join(base, "mouse")
+        if os.path.isdir(kb) or os.path.isdir(ms):
+            res[n] = {"keyboard": kb, "mouse": ms}
+    return res
+
+
 def parse_segment_name(fname: str) -> Optional[Tuple[str, int, int, str]]:
     m = re.match(r"(m\d+)_r(\d+)_seg(\d+)_(kb|ms)\.csv$", fname)
     if not m:
         return None
     return m.group(1), int(m.group(2)), int(m.group(3)), m.group(4)
+
+
+def parse_segment_name_flexible(fname: str) -> Optional[Tuple[Optional[str], int, int, str]]:
+    m = re.match(r"(m\d+)_r(\d+)_seg(\d+)_(kb|ms)\.csv$", fname)
+    if m:
+        return m.group(1), int(m.group(2)), int(m.group(3)), m.group(4)
+    m2 = re.match(r"r(\d+)_seg(\d+)_(kb|ms)\.csv$", fname)
+    if m2:
+        return None, int(m2.group(1)), int(m2.group(2)), m2.group(3)
+    return None
 
 
 def build_segments_index(name_dirs: Dict[str, Dict[str, str]]) -> Dict[str, Dict[Tuple[str, int, int], Dict[str, str]]]:
@@ -43,6 +81,51 @@ def build_segments_index(name_dirs: Dict[str, Dict[str, str]]) -> Dict[str, Dict
                 idx[n].setdefault(key, {})
                 idx[n][key][mtag] = os.path.join(p, f)
     return idx
+
+
+def build_pairs_in_map(processed_root: str, map_dir: str, name: str) -> List[Tuple[str, str, Tuple[str, int, int]]]:
+    nd = list_name_dirs_in_map(processed_root, map_dir)
+    if name not in nd:
+        return []
+    kb_dir = nd[name].get("keyboard")
+    ms_dir = nd[name].get("mouse")
+    keys: Dict[Tuple[int, int], Dict[str, str]] = {}
+    if kb_dir and os.path.isdir(kb_dir):
+        for f in os.listdir(kb_dir):
+            meta = parse_segment_name_flexible(f)
+            if not meta:
+                continue
+            _, r, s, tag = meta
+            if tag != "kb":
+                continue
+            keys.setdefault((r, s), {})
+            keys[(r, s)]["kb"] = os.path.join(kb_dir, f)
+    if ms_dir and os.path.isdir(ms_dir):
+        for f in os.listdir(ms_dir):
+            meta = parse_segment_name_flexible(f)
+            if not meta:
+                continue
+            _, r, s, tag = meta
+            if tag != "ms":
+                continue
+            keys.setdefault((r, s), {})
+            keys[(r, s)]["ms"] = os.path.join(ms_dir, f)
+    res: List[Tuple[str, str, Tuple[str, int, int]]] = []
+    for (r, s), vv in keys.items():
+        kb = vv.get("kb")
+        ms = vv.get("ms")
+        if kb and ms:
+            res.append((kb, ms, (map_dir, r, s)))
+    res.sort(key=lambda x: (x[2][0], x[2][1], x[2][2]))
+    return res
+
+
+def list_pairs_for_name_in_maps(processed_root: str, name: str, maps: List[str]) -> List[Tuple[str, str, Tuple[str, int, int]]]:
+    res: List[Tuple[str, str, Tuple[str, int, int]]] = []
+    for mdir in maps:
+        res.extend(build_pairs_in_map(processed_root, mdir, name))
+    res.sort(key=lambda x: (x[2][0], x[2][1], x[2][2]))
+    return res
 
 
 def read_keyboard_csv(path: str) -> Optional[np.ndarray]:
@@ -122,10 +205,27 @@ def list_single_for_name(processed_root: str, name: str, mode: str) -> List[str]
     return files
 
 
+def list_single_for_name_in_maps(processed_root: str, name: str, mode: str, maps: List[str]) -> List[str]:
+    res: List[str] = []
+    for m in maps:
+        nd = list_name_dirs_in_map(processed_root, m)
+        if name not in nd:
+            continue
+        p = nd[name].get("keyboard" if mode == "keyboard" else "mouse")
+        if not p or not os.path.isdir(p):
+            continue
+        for f in os.listdir(p):
+            meta = parse_segment_name_flexible(f)
+            if not meta:
+                continue
+            res.append(os.path.join(p, f))
+    res.sort()
+    return res
+
+
 def read_sample(path: str, mode: str) -> Optional[np.ndarray]:
     if mode == "keyboard":
         return read_keyboard_csv(path)
     if mode == "mouse":
         return read_mouse_csv(path)
     return None
-

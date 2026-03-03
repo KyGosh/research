@@ -1,174 +1,191 @@
 import os
 import argparse
 import re
+import shutil
 from typing import Dict, List, Tuple, Iterable, Set
 
 import pandas as pd
 
-
+# ------------------------------------------------------------
+# 1. 找到每个 map 的 keyboard / mouse / time 文件
+# ------------------------------------------------------------
 def find_files(origin_dir: str) -> Dict[str, Dict[str, str]]:
     result: Dict[str, Dict[str, str]] = {}
-    ks_dir = os.path.join(origin_dir, "keystroke_button")
+
+    ks_dir = os.path.join(origin_dir, "keystroke_data")
     ms_dir = os.path.join(origin_dir, "mouse_data")
     tm_dir = os.path.join(origin_dir, "time_data")
-    for root, _, files in os.walk(ks_dir):
-        for f in files:
-            m = re.search(r"_m(\d+)\.csv$", f)
-            if not m:
-                continue
-            k = f"m{m.group(1)}"
-            result.setdefault(k, {})
-            result[k]["keyboard"] = os.path.join(root, f)
-    for root, _, files in os.walk(ms_dir):
-        for f in files:
-            m = re.search(r"_m(\d+)\.csv$", f)
-            if not m:
-                continue
-            k = f"m{m.group(1)}"
-            result.setdefault(k, {})
-            result[k]["mouse"] = os.path.join(root, f)
-    for root, _, files in os.walk(tm_dir):
-        for f in files:
-            m = re.search(r"_m(\d+)\.csv$", f)
-            if not m:
-                continue
-            k = f"m{m.group(1)}"
-            result.setdefault(k, {})
-            result[k]["time"] = os.path.join(root, f)
+
+    def collect(dir_path: str, key_name: str):
+        for root, _, files in os.walk(dir_path):
+            for f in files:
+                m = re.search(r"_m(\d+)\.csv$", f)
+                if not m:
+                    continue
+                map_key = f"map{m.group(1)}"
+                result.setdefault(map_key, {})
+                result[map_key][key_name] = os.path.join(root, f)
+
+    collect(ks_dir, "keyboard")
+    collect(ms_dir, "mouse")
+    collect(tm_dir, "time")
+
     return result
 
+# ------------------------------------------------------------
+# 2. 根据 time.csv 生成每一轮的时间段
+# 支持 overlap
+# ------------------------------------------------------------
+def load_time_segments(time_csv: str, segment_ticks: int, overlap_ratio: float = 0.0) -> Dict[int, List[Tuple[int, int]]]:
 
-def load_time_segments(time_csv: str, segment_ticks: int) -> Dict[int, List[Tuple[int, int]]]:
     df = pd.read_csv(time_csv)
     segments: Dict[int, List[Tuple[int, int]]] = {}
+
+    step = int(segment_ticks * (1 - overlap_ratio))
+    if step <= 0:
+        raise ValueError("overlap_ratio 太大")
+
     for _, row in df.iterrows():
-        fe = int(row["freeze_end"])
+        freeze_end = int(row["freeze_end"])
         end = int(row["end"])
-        r = int(row["round_num"])
+        round_num = int(row["round_num"])
+
         segs: List[Tuple[int, int]] = []
-        start = fe
+        start = freeze_end
+
         while start + segment_ticks - 1 <= end:
             segs.append((start, start + segment_ticks - 1))
-            start += segment_ticks
+            start += step
+
         if segs:
-            segments[r] = segs
+            segments[round_num] = segs
+
     return segments
 
-
+# ------------------------------------------------------------
+# 3. 收集所有玩家名字
+# ------------------------------------------------------------
 def collect_names(files: Iterable[str]) -> Set[str]:
     names: Set[str] = set()
+
     for path in files:
         if not os.path.exists(path):
             continue
-        try:
-            for chunk in pd.read_csv(path, usecols=["name"], chunksize=200000):
-                names.update(chunk["name"].astype(str).unique().tolist())
-        except ValueError:
-            df = pd.read_csv(path)
-            if "name" in df.columns:
-                names.update(df["name"].astype(str).unique().tolist())
+
+        for chunk in pd.read_csv(path, usecols=["name"], chunksize=200000):
+            names.update(chunk["name"].astype(str).unique())
+
     return names
 
-
-def ensure_dirs(out_root: str, names: Iterable[str]) -> Dict[str, Dict[str, str]]:
+# ------------------------------------------------------------
+# 4. 建立目录结构：map/player/keyboard mouse
+# ------------------------------------------------------------
+def ensure_dirs(out_root: str, map_key: str, names: Iterable[str]) -> Dict[str, Dict[str, str]]:
     mapping: Dict[str, Dict[str, str]] = {}
-    for n in names:
-        base = os.path.join(out_root, n)
-        kb = os.path.join(base, "keyboard")
-        ms = os.path.join(base, "mouse")
-        os.makedirs(kb, exist_ok=True)
-        os.makedirs(ms, exist_ok=True)
-        mapping[n] = {"keyboard": kb, "mouse": ms}
+
+    for name in names:
+        base = os.path.join(out_root, map_key, name)
+        kb_dir = os.path.join(base, "keyboard")
+        ms_dir = os.path.join(base, "mouse")
+
+        os.makedirs(kb_dir, exist_ok=True)
+        os.makedirs(ms_dir, exist_ok=True)
+
+        mapping[name] = {
+            "keyboard": kb_dir,
+            "mouse": ms_dir,
+        }
+
     return mapping
 
-
-def filter_and_write_all_rounds(
+# ------------------------------------------------------------
+# 5. 按 segment 切分并写入文件
+# ------------------------------------------------------------
+def filter_and_write(
     data_csv: str,
     name: str,
     segments_by_round: Dict[int, List[Tuple[int, int]]],
     out_dir: str,
     tag: str,
     map_key: str,
-    start_index: int,
-    dtypes: Dict[str, str] = None,
-    encoding: str = "utf-8",
-) -> int:
-    idx = start_index
-    usecols = None
-    if dtypes is None:
-        dtypes = {}
-    try:
-        header_df = pd.read_csv(data_csv, nrows=0)
-        cols = header_df.columns.tolist()
-        if "tick" in cols and "name" in cols:
-            usecols = cols
-    except Exception:
-        pass
-    for chunk in pd.read_csv(data_csv, chunksize=500000, usecols=usecols, dtype=dtypes, encoding=encoding):
-        sub = chunk[chunk["name"] == name]
-        if sub.empty:
-            continue
-        for r in sorted(segments_by_round.keys()):
-            segs = segments_by_round[r]
-            for s, e in segs:
-                mask = (sub["tick"] >= s) & (sub["tick"] <= e)
-                part = sub.loc[mask]
-                if part.empty:
-                    continue
-                fname = f"{map_key}_r{r}_seg{idx:03d}_{tag}.csv"
-                fpath = os.path.join(out_dir, fname)
-                part.to_csv(fpath, index=False)
-                idx += 1
-    return idx
-
-
-def process(
-    origin_dir: str,
-    out_dir: str,
-    segment_ticks: int,
-    expected_names: int = None,
 ) -> None:
+
+    df = pd.read_csv(data_csv)
+    sub = df[df["name"] == name]
+
+    if sub.empty:
+        return
+
+    tick_set = set(sub["tick"].values)
+    seg_index = 1
+
+    for r in sorted(segments_by_round.keys()):
+        for start, end in segments_by_round[r]:
+
+            if end not in tick_set:
+                break
+
+            mask = (sub["tick"] >= start) & (sub["tick"] <= end)
+            part = sub.loc[mask]
+
+            if part.empty:
+                continue
+
+            fname = f"{map_key}_r{r}_seg{seg_index:03d}_{tag}.csv"
+            part.to_csv(os.path.join(out_dir, fname), index=False)
+
+            seg_index += 1
+
+# ------------------------------------------------------------
+# 6. 主处理流程
+# ------------------------------------------------------------
+def process(origin_dir: str, out_dir: str, segment_ticks: int, overlap_ratio: float) -> None:
     files = find_files(origin_dir)
-    names = collect_names(
-        [v for m in files.values() for v in [m.get("keyboard"), m.get("mouse")] if v]
-    )
-    if expected_names is not None and len(names) != expected_names:
-        pass
-    name_dirs = ensure_dirs(out_dir, names)
-    counters_kb: Dict[str, int] = {n: 1 for n in names}
-    counters_ms: Dict[str, int] = {n: 1 for n in names}
+
+    # 收集所有玩家
+    names = collect_names([v for m in files.values() for v in [m.get("keyboard"), m.get("mouse")] if v])
+
     for map_key in sorted(files.keys()):
-        tfile = files[map_key].get("time")
-        kfile = files[map_key].get("keyboard")
-        mfile = files[map_key].get("mouse")
-        if not tfile or not kfile or not mfile:
+        time_file = files[map_key].get("time")
+        keyboard_file = files[map_key].get("keyboard")
+        mouse_file = files[map_key].get("mouse")
+
+        if not time_file or not keyboard_file or not mouse_file:
             continue
-        segments_by_round = load_time_segments(tfile, segment_ticks)
-        for n in names:
-            counters_kb[n] = filter_and_write_all_rounds(
-                kfile,
-                n,
+
+        print(f"Processing {map_key}...")
+
+        # 建立目录
+        name_dirs = ensure_dirs(out_dir, map_key, names)
+
+        # 生成时间段
+        segments_by_round = load_time_segments(time_file, segment_ticks, overlap_ratio)
+
+        for name in names:
+            filter_and_write(
+                keyboard_file,
+                name,
                 segments_by_round,
-                name_dirs[n]["keyboard"],
+                name_dirs[name]["keyboard"],
                 "kb",
                 map_key,
-                counters_kb[n],
-                dtypes={"tick": "int64", "steamid": "string", "name": "string"},
             )
-            counters_ms[n] = filter_and_write_all_rounds(
-                mfile,
-                n,
+
+            filter_and_write(
+                mouse_file,
+                name,
                 segments_by_round,
-                name_dirs[n]["mouse"],
+                name_dirs[name]["mouse"],
                 "ms",
                 map_key,
-                counters_ms[n],
-                dtypes={"tick": "int64", "steamid": "string", "name": "string"},
             )
 
-
+# ------------------------------------------------------------
+# 7. main
+# ------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser()
+
     parser.add_argument(
         "--origin-dir",
         type=str,
@@ -179,12 +196,20 @@ def main():
         type=str,
         default=os.path.join("d:\\", "Project", "Research", "processed_data"),
     )
-    parser.add_argument("--segment-ticks", type=int, default=1920)
-    parser.add_argument("--expected-names", type=int, default=None)
+    parser.add_argument("--segment-ticks", type=int, default=640)
+    parser.add_argument(
+        "--overlap-ratio",
+        type=float,
+        default=0.0,  # 0 表示不重叠
+        help="0.5 表示 50% overlap",
+    )
     args = parser.parse_args()
-    os.makedirs(args.out_dir, exist_ok=True)
-    process(args.origin_dir, args.out_dir, args.segment_ticks, args.expected_names)
 
+    if os.path.isdir(args.out_dir):
+        shutil.rmtree(args.out_dir)
+    os.makedirs(args.out_dir)
+
+    process(args.origin_dir, args.out_dir, args.segment_ticks, args.overlap_ratio)
 
 if __name__ == "__main__":
     main()

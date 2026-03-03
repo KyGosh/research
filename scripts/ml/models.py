@@ -32,15 +32,30 @@ class MultiClassHead(nn.Module):
     def forward(self, x):
         return self.mlp(x)
 
+'''
+Encoder + Head
 
+Encoder：
+① 特征提取
+② 信息压缩
+③ 表征学习（representation learning）
+鼠标和键盘、单一和多元 均可使用同一种LSTMEncoder，通过参数控制
+
+Head：
+决定输出
+
+Backbone + Task-specific head
+'''
 class UnifiedModel(nn.Module):
     def __init__(self, input_dim: int, hidden_dim: int = 128, num_layers: int = 2, bidirectional: bool = False, dropout: float = 0.1, num_classes: int = None):
         super().__init__()
         self.enc = LSTMEncoder(input_dim, hidden_dim, num_layers, bidirectional, dropout)
         out_dim = hidden_dim * (2 if bidirectional else 1)
         if num_classes is None:
+            # 确定任务--authentication
             self.head = BinaryHead(out_dim)
         else:
+            # 确定任务--identification
             self.head = MultiClassHead(out_dim, num_classes)
 
     def forward(self, x):
