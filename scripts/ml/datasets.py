@@ -55,7 +55,7 @@ def parse_segment_name(fname: str) -> Optional[Tuple[str, int, int, str]]:
 
 
 def parse_segment_name_flexible(fname: str) -> Optional[Tuple[Optional[str], int, int, str]]:
-    m = re.match(r"(m\d+)_r(\d+)_seg(\d+)_(kb|ms)\.csv$", fname)
+    m = re.match(r"(map\d+)_r(\d+)_seg(\d+)_(kb|ms)\.csv$", fname)
     if m:
         return m.group(1), int(m.group(2)), int(m.group(3)), m.group(4)
     m2 = re.match(r"r(\d+)_seg(\d+)_(kb|ms)\.csv$", fname)

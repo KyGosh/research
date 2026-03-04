@@ -21,14 +21,13 @@ def build_tensors(files, mode):
     xs = []
     for f in files:
         x = read_sample(f, mode)
-        if x is None:
+        if x is None or x.shape[0] < 640:
             continue
         xs.append(x)
     if not xs:
         return None
     x = np.stack(xs, axis=0).astype(np.float32)
     return torch.tensor(x, dtype=torch.float32)
-
 
 def build_tensors_unified_from_pairs(pairs):
     xs = []
@@ -41,7 +40,6 @@ def build_tensors_unified_from_pairs(pairs):
         return None
     x = np.stack(xs, axis=0).astype(np.float32)
     return torch.tensor(x, dtype=torch.float32)
-
 
 def build_tensors_fusion(pairs):
     kb_xs = []
@@ -59,48 +57,97 @@ def build_tensors_fusion(pairs):
     ms = np.stack(ms_xs, axis=0).astype(np.float32)
     return torch.tensor(kb, dtype=torch.float32), torch.tensor(ms, dtype=torch.float32)
 
-
-def train_binary_unified(x_train, y_train, x_val, y_val, input_dim, device, epochs=30, lr=1e-3, bsz=32, patience=5):
+def train_binary_unified(
+    x_train, y_train,
+    x_val, y_val,
+    input_dim,
+    device,
+    epochs=30,
+    lr=1e-3,
+    bsz=32,
+    patience=50
+):
     model = UnifiedModel(input_dim=input_dim).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     loss_fn = nn.BCEWithLogitsLoss()
+
     train_ds = TensorDataset(x_train, y_train)
     val_ds = TensorDataset(x_val, y_val)
+
     train_loader = DataLoader(train_ds, batch_size=bsz, shuffle=True)
     val_loader = DataLoader(val_ds, batch_size=bsz)
+
     best_val = float("inf")
     best_state = None
     bad = 0
-    for _ in range(epochs):
+
+    for epoch in range(epochs):
+
+        # ========= Train =========
         model.train()
+        train_losses = []
+
         for xb, yb in train_loader:
             xb = xb.to(device)
             yb = yb.to(device)
+
             opt.zero_grad()
             logits = model(xb)
             loss = loss_fn(logits, yb)
             loss.backward()
             opt.step()
+
+            train_losses.append(loss.item())
+
+        train_loss = float(np.mean(train_losses))
+
+        # ========= Validation =========
         model.eval()
-        vs = []
+        val_losses = []
+        correct = 0
+        total = 0
+
         with torch.no_grad():
             for xb, yb in val_loader:
                 xb = xb.to(device)
                 yb = yb.to(device)
-                vs.append(loss_fn(model(xb), yb).item())
-        v = float(np.mean(vs)) if vs else 0.0
-        if v < best_val:
-            best_val = v
-            best_state = {k: v.cpu() for k, v in model.state_dict().items()}
+
+                logits = model(xb)
+                loss = loss_fn(logits, yb)
+                val_losses.append(loss.item())
+
+                probs = torch.sigmoid(logits)
+                preds = (probs > 0.5).float()
+
+                correct += (preds == yb).sum().item()
+                total += yb.size(0)
+
+        val_loss = float(np.mean(val_losses)) if val_losses else 0.0
+        val_acc = correct / total if total > 0 else 0.0
+
+        print(
+            f"Epoch [{epoch+1:02d}/{epochs}] "
+            f"Train Loss: {train_loss:.4f} | "
+            f"Val Loss: {val_loss:.4f} | "
+            f"Val Acc: {val_acc:.4f}"
+        )
+
+        # ========= Early Stopping =========
+        if val_loss < best_val:
+            best_val = val_loss
+            best_state = {k: param.cpu() for k, param in model.state_dict().items()}
             bad = 0
         else:
             bad += 1
             if bad >= patience:
+                print(f"Early stopping triggered at epoch {epoch+1}")
                 break
+
+    # 恢复最佳模型
     if best_state is not None:
         model.load_state_dict(best_state)
-    return model
 
+    return model
 
 def train_binary_fusion(kb_train, ms_train, y_train, kb_val, ms_val, y_val, kb_dim, ms_dim, device, epochs=30, lr=1e-3, bsz=32, patience=5):
     model = FusionModel(kb_input_dim=kb_dim, ms_input_dim=ms_dim).to(device)
@@ -437,9 +484,10 @@ def main():
     args = parser.parse_args()
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    modes = ["keyboard", "mouse", "unified", "fusion"] if args.mode == "all" else [args.mode]
-    for m in modes:
-        run_mapcv(args.processed_root, args.target_name, m, device, epochs=args.epochs, lr=args.lr, bsz=args.bsz, seed=args.seed)
+    # modes = ["keyboard", "mouse", "unified", "fusion"] if args.mode == "all" else [args.mode]
+    # for m in modes:
+    #     run_mapcv(args.processed_root, args.target_name, m, device, epochs=args.epochs, lr=args.lr, bsz=args.bsz, seed=args.seed)
+    run_mapcv(args.processed_root, args.target_name, "keyboard", device, epochs=args.epochs, lr=args.lr, bsz=args.bsz, seed=args.seed)
 
 
 if __name__ == "__main__":
