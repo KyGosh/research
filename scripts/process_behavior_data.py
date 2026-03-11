@@ -200,7 +200,7 @@ def main():
     parser.add_argument(
         "--overlap-ratio",
         type=float,
-        default=0.0,  # 0 表示不重叠
+        default=0.5,  # 0 表示不重叠
         help="0.5 表示 50% overlap",
     )
     args = parser.parse_args()

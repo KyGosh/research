@@ -8,7 +8,10 @@ from sklearn.metrics import roc_auc_score, roc_curve
 from torch.utils.data import TensorDataset, DataLoader
 from scripts.ml.datasets import list_maps, list_name_dirs_in_map, list_single_for_name_in_maps, list_pairs_for_name_in_maps, read_sample, read_unified_sample
 from scripts.ml.models import UnifiedModel, FusionModel
+import matplotlib.pyplot as plt
 
+TENSOR_LEN = 640
+PRINT_FLAG = True
 
 def set_seed(s: int):
     random.seed(s)
@@ -21,7 +24,7 @@ def build_tensors(files, mode):
     xs = []
     for f in files:
         x = read_sample(f, mode)
-        if x is None or x.shape[0] < 640:
+        if x is None or x.shape[0] < TENSOR_LEN:
             continue
         xs.append(x)
     if not xs:
@@ -33,7 +36,7 @@ def build_tensors_unified_from_pairs(pairs):
     xs = []
     for kb, ms, _ in pairs:
         x = read_unified_sample(kb, ms)
-        if x is None:
+        if x is None or x.shape[0] < TENSOR_LEN:
             continue
         xs.append(x)
     if not xs:
@@ -65,7 +68,7 @@ def train_binary_unified(
     epochs=30,
     lr=1e-3,
     bsz=32,
-    patience=50
+    patience=10
 ):
     model = UnifiedModel(input_dim=input_dim).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
@@ -294,7 +297,10 @@ def run_fold(processed_root: str, target_name: str, mode: str, train_maps, valid
         neg_train = neg_train[:len(pos_train)]
         x_pos_train = build_tensors(pos_train, mode)
         x_neg_train = build_tensors(neg_train, mode)
+        print("x_pos_train: ", x_pos_train.shape)
+        print("x_neg_train: ", x_neg_train.shape)
         if x_pos_train is None or x_neg_train is None:
+            print("pos_train is none!!!")
             return None
         y_pos_train = torch.ones(x_pos_train.shape[0], dtype=torch.float32)
         y_neg_train = torch.zeros(x_neg_train.shape[0], dtype=torch.float32)
@@ -308,6 +314,7 @@ def run_fold(processed_root: str, target_name: str, mode: str, train_maps, valid
         x_test_pos = build_tensors(pos_test, mode)
         x_test_neg = build_tensors(neg_test, mode)
         if x_val_pos is None or x_val_neg is None or x_test_pos is None or x_test_neg is None:
+            print("val or test none!!!")
             return None
         y_val_pos = torch.ones(x_val_pos.shape[0], dtype=torch.float32)
         y_val_neg = torch.zeros(x_val_neg.shape[0], dtype=torch.float32)
@@ -351,7 +358,10 @@ def run_fold(processed_root: str, target_name: str, mode: str, train_maps, valid
         neg_train_pairs = neg_train_pairs[:len(pos_train_pairs)]
         x_pos_train = build_tensors_unified_from_pairs(pos_train_pairs)
         x_neg_train = build_tensors_unified_from_pairs(neg_train_pairs)
+        print("x_pos_train: ", x_pos_train.shape)
+        print("x_neg_train: ", x_neg_train.shape)
         if x_pos_train is None or x_neg_train is None:
+            print("x_pos_train is None or x_neg_train is None")
             return None
         y_pos_train = torch.ones(x_pos_train.shape[0], dtype=torch.float32)
         y_neg_train = torch.zeros(x_neg_train.shape[0], dtype=torch.float32)
@@ -365,6 +375,7 @@ def run_fold(processed_root: str, target_name: str, mode: str, train_maps, valid
         x_test_pos = build_tensors_unified_from_pairs(pos_test_pairs)
         x_test_neg = build_tensors_unified_from_pairs(neg_test_pairs)
         if x_val_pos is None or x_val_neg is None or x_test_pos is None or x_test_neg is None:
+            print("val or test none!!!")
             return None
         y_val_pos = torch.ones(x_val_pos.shape[0], dtype=torch.float32)
         y_val_neg = torch.zeros(x_val_neg.shape[0], dtype=torch.float32)
@@ -469,6 +480,15 @@ def run_mapcv(processed_root: str, target_name: str, mode: str, device, epochs=3
         t_eer = float(np.mean([x["test"]["eer"] for x in results]))
         print(f"[{mode}] avg val acc={v_acc:.4f} auc={v_auc:.4f} eer={v_eer:.4f}")
         print(f"[{mode}] avg test acc={t_acc:.4f} auc={t_auc:.4f} eer={t_eer:.4f}")
+
+        plt.plot(range(kfold), [x["test"]["auc"] for x in results], marker='o', label='AUC')
+        plt.plot(range(kfold), [x["test"]["eer"] for x in results], marker='s', label='EER')
+        plt.xlabel("Fold")
+        plt.ylabel("Score")
+        plt.title("Cross Validation Performance")
+        plt.legend()
+        plt.show()
+
     return results
 
 
@@ -487,7 +507,7 @@ def main():
     # modes = ["keyboard", "mouse", "unified", "fusion"] if args.mode == "all" else [args.mode]
     # for m in modes:
     #     run_mapcv(args.processed_root, args.target_name, m, device, epochs=args.epochs, lr=args.lr, bsz=args.bsz, seed=args.seed)
-    run_mapcv(args.processed_root, args.target_name, "keyboard", device, epochs=args.epochs, lr=args.lr, bsz=args.bsz, seed=args.seed)
+    run_mapcv(args.processed_root, args.target_name, "unified", device, epochs=args.epochs, lr=args.lr, bsz=args.bsz, seed=args.seed)
 
 
 if __name__ == "__main__":

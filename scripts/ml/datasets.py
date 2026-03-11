@@ -4,6 +4,7 @@ from typing import Dict, List, Tuple, Optional
 
 import pandas as pd
 import numpy as np
+from joblib.parallel import default_parallel_config
 
 
 def list_name_dirs(processed_root: str) -> Dict[str, Dict[str, str]]:
@@ -48,21 +49,10 @@ def list_name_dirs_in_map(processed_root: str, map_dir: str) -> Dict[str, Dict[s
 
 
 def parse_segment_name(fname: str) -> Optional[Tuple[str, int, int, str]]:
-    m = re.match(r"(m\d+)_r(\d+)_seg(\d+)_(kb|ms)\.csv$", fname)
+    m = re.match(r"(map\d+)_r(\d+)_seg(\d+)_(kb|ms)\.csv$", fname)
     if not m:
         return None
     return m.group(1), int(m.group(2)), int(m.group(3)), m.group(4)
-
-
-def parse_segment_name_flexible(fname: str) -> Optional[Tuple[Optional[str], int, int, str]]:
-    m = re.match(r"(map\d+)_r(\d+)_seg(\d+)_(kb|ms)\.csv$", fname)
-    if m:
-        return m.group(1), int(m.group(2)), int(m.group(3)), m.group(4)
-    m2 = re.match(r"r(\d+)_seg(\d+)_(kb|ms)\.csv$", fname)
-    if m2:
-        return None, int(m2.group(1)), int(m2.group(2)), m2.group(3)
-    return None
-
 
 def build_segments_index(name_dirs: Dict[str, Dict[str, str]]) -> Dict[str, Dict[Tuple[str, int, int], Dict[str, str]]]:
     idx: Dict[str, Dict[Tuple[str, int, int], Dict[str, str]]] = {}
@@ -92,7 +82,7 @@ def build_pairs_in_map(processed_root: str, map_dir: str, name: str) -> List[Tup
     keys: Dict[Tuple[int, int], Dict[str, str]] = {}
     if kb_dir and os.path.isdir(kb_dir):
         for f in os.listdir(kb_dir):
-            meta = parse_segment_name_flexible(f)
+            meta = parse_segment_name(f)
             if not meta:
                 continue
             _, r, s, tag = meta
@@ -102,7 +92,7 @@ def build_pairs_in_map(processed_root: str, map_dir: str, name: str) -> List[Tup
             keys[(r, s)]["kb"] = os.path.join(kb_dir, f)
     if ms_dir and os.path.isdir(ms_dir):
         for f in os.listdir(ms_dir):
-            meta = parse_segment_name_flexible(f)
+            meta = parse_segment_name(f)
             if not meta:
                 continue
             _, r, s, tag = meta
@@ -116,7 +106,6 @@ def build_pairs_in_map(processed_root: str, map_dir: str, name: str) -> List[Tup
         ms = vv.get("ms")
         if kb and ms:
             res.append((kb, ms, (map_dir, r, s)))
-    res.sort(key=lambda x: (x[2][0], x[2][1], x[2][2]))
     return res
 
 
@@ -145,26 +134,50 @@ def read_keyboard_csv(path: str) -> Optional[np.ndarray]:
         res[:, i] = v
     return res
 
-
-def read_mouse_csv(path: str, standardize: bool = True) -> Optional[np.ndarray]:
+def read_mouse_csv(path: str, standardize: bool = False) -> Optional[np.ndarray]:
     if not os.path.exists(path):
         return None
     df = pd.read_csv(path)
     cols = ["FIRE", "pitch", "yaw"]
     if not set(cols).issubset(df.columns):
         return None
-    fire = df["FIRE"].map({"True": 1.0, "False": 0.0}).astype(np.float32).values
+
+    # 处理数据，使用pandas/dataframe
+    df["dp"] = df["pitch"].diff()
+    df["dy"] = df["yaw"].diff()
+    df["speed"] = np.sqrt(df["dp"] ** 2 + df["dy"] ** 2)
+    df["acc"] = df["speed"].diff()
+    df["jerk"] = df["acc"].diff()
+
+    # 处理df中的NaN数据
+    df = df.bfill().fillna(0)
+
+    # 特征，转成numpy
+    fire = df["FIRE"].map({True: 1.0, False: 0.0}).astype(np.float32).values
     pitch = df["pitch"].astype(np.float32).values
     yaw = df["yaw"].astype(np.float32).values
+    dp = df["dp"].astype(np.float32).values
+    dy = df["dy"].astype(np.float32).values
+    speed = df["speed"].astype(np.float32).values
+    acc = df["acc"].astype(np.float32).values
+    jerk = df["jerk"].astype(np.float32).values
+
+    # 标准化
     if standardize:
         for v in (pitch, yaw):
             m = float(np.mean(v))
             s = float(np.std(v)) if float(np.std(v)) > 1e-8 else 1.0
             v -= m
             v /= s
-    res = np.stack([fire, pitch, yaw], axis=1).astype(np.float32)
-    return res
 
+    # res = np.stack([fire, pitch, yaw, dp, dy, speed, acc, jerk], axis=1).astype(np.float32)
+    res = np.stack([fire, dp, dy, speed, acc, jerk], axis=1).astype(np.float32)
+
+    if np.isnan(res).any():
+        print("np has NaN value!")
+        return None
+
+    return res
 
 def read_unified_sample(kb_path: str, ms_path: str) -> Optional[np.ndarray]:
     kb = read_keyboard_csv(kb_path)
@@ -215,7 +228,7 @@ def list_single_for_name_in_maps(processed_root: str, name: str, mode: str, maps
         if not p or not os.path.isdir(p):
             continue
         for f in os.listdir(p):
-            meta = parse_segment_name_flexible(f)
+            meta = parse_segment_name(f)
             if not meta:
                 continue
             res.append(os.path.join(p, f))
