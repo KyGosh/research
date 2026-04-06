@@ -3,64 +3,63 @@ import torch.nn as nn
 
 
 class LSTMEncoder(nn.Module):
-    def __init__(self, input_dim: int, hidden_dim: int = 128, num_layers: int = 2, bidirectional: bool = False, dropout: float = 0.1):
+    def __init__(self, input_dim: int, hidden_dim: int = 128, num_layers: int = 2, bidirectional: bool = False, dropout: float = 0.1, use_attention: bool = False):
         super().__init__()
-        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers=num_layers, batch_first=True, bidirectional=bidirectional, dropout=dropout)
+        self.use_attention = use_attention
+        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers=num_layers, batch_first=True, bidirectional=bidirectional, dropout=dropout if num_layers > 1 else 0)
         out_dim = hidden_dim * (2 if bidirectional else 1)
+        
+        if self.use_attention:
+            self.attention = nn.Sequential(
+                nn.Linear(out_dim, out_dim),
+                nn.Tanh(),
+                nn.Linear(out_dim, 1, bias=False)
+            )
+            
         self.proj = nn.Sequential(nn.LayerNorm(out_dim), nn.Linear(out_dim, out_dim), nn.ReLU())
 
     def forward(self, x):
         output, (hn, cn) = self.lstm(x)
-        h = hn[-1]
+        
+        if self.use_attention:
+            # output shape: (batch, seq_len, out_dim)
+            attn_weights = torch.softmax(self.attention(output), dim=1) # (batch, seq_len, 1)
+            h = torch.sum(output * attn_weights, dim=1) # (batch, out_dim)
+        else:
+            h = hn[-1]
+            
         return self.proj(h)
-
 
 class BinaryHead(nn.Module):
     def __init__(self, in_dim: int):
         super().__init__()
-        self.mlp = nn.Sequential(nn.Linear(in_dim, in_dim), nn.ReLU(), nn.Linear(in_dim, 1))
+        self.mlp = nn.Sequential(nn.Linear(in_dim, in_dim), nn.ReLU(), nn.Dropout(0.3), nn.Linear(in_dim, 1))
 
     def forward(self, x):
         return self.mlp(x).squeeze(-1)
 
-
 class MultiClassHead(nn.Module):
     def __init__(self, in_dim: int, num_classes: int):
         super().__init__()
-        self.mlp = nn.Sequential(nn.Linear(in_dim, in_dim), nn.ReLU(), nn.Linear(in_dim, num_classes))
+        self.mlp = nn.Sequential(nn.Linear(in_dim, in_dim), nn.ReLU(), nn.Dropout(0.3), nn.Linear(in_dim, num_classes))
 
     def forward(self, x):
         return self.mlp(x)
 
-'''
-Encoder + Head
-
-Encoder：
-① 特征提取
-② 信息压缩
-③ 表征学习（representation learning）
-鼠标和键盘、单一和多元 均可使用同一种LSTMEncoder，通过参数控制
-
-Head：
-决定输出
-
-Backbone + Task-specific head
-'''
 class UnifiedModel(nn.Module):
-    def __init__(self, input_dim: int, hidden_dim: int = 128, num_layers: int = 2, bidirectional: bool = False, dropout: float = 0.1, num_classes: int = None):
+    def __init__(self, input_dim: int, hidden_dim: int = 128, num_layers: int = 2, bidirectional: bool = False, dropout: float = 0.1, num_classes: int = None, use_attention: bool = False):
         super().__init__()
-        self.enc = LSTMEncoder(input_dim, hidden_dim, num_layers, bidirectional, dropout)
+        self.enc = LSTMEncoder(input_dim, hidden_dim, num_layers, bidirectional, dropout, use_attention)
         out_dim = hidden_dim * (2 if bidirectional else 1)
         if num_classes is None:
-            # 确定任务--authentication
             self.head = BinaryHead(out_dim)
         else:
-            # 确定任务--identification
             self.head = MultiClassHead(out_dim, num_classes)
 
     def forward(self, x):
         z = self.enc(x)
         return self.head(z)
+
 
 
 class FusionModel(nn.Module):
