@@ -140,7 +140,8 @@ def extract_mouse_characteristics(raw_file: str) -> pd.DataFrame:
     df_raw["jerk"] = df_raw.groupby("name")["acc"].diff()
 
     df = df_raw.bfill().fillna(0)
-
+    from refined_version.function.util_func import discretize_mouse_data
+    df = discretize_mouse_data(df)
     return df
 
 
