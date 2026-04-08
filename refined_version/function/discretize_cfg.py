@@ -4,6 +4,7 @@ import json
 
 import numpy as np
 import pandas as pd
+import os
 
 DISCRETIZED_LEVELS = {
     "dp": 5,
@@ -13,11 +14,11 @@ DISCRETIZED_LEVELS = {
     "jerk": 5
 }
 
-def main(os=None):
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mouse_dir", type=str, default=os.path.join("d:\\", "Project", "Research", "origin_data", "mouse_data"))
     parser.add_argument("--time_dir", type=str, default=os.path.join("d:\\", "Project", "Research", "origin_data", "time_data"))
-    parser.add_argument("--output_dir", type=str, default="d:\\Project\Research\output")
+    parser.add_argument("--output_dir", type=str, default="d:\\Project\\Research\\output")
     args = parser.parse_args()
 
     all_data = []
