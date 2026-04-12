@@ -79,3 +79,15 @@ def discretize_mouse_data(df: pd.DataFrame) -> pd.DataFrame:
         df[feature] = bins * sign
 
     return df
+
+
+def list_maps(processed_root: str) -> list[str]:
+    maps = []
+    for d in os.listdir(processed_root):
+        p = os.path.join(processed_root, d)
+        if not os.path.isdir(p):
+            continue
+        if re.match(r"^map\d+$", d):
+            maps.append(d)
+    maps.sort(key=lambda x: int(re.findall(r"\d+", x)[0]) if re.findall(r"\d+", x) else 0)
+    return maps
