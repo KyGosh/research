@@ -20,7 +20,7 @@ def process_single(csv_file: str, csv_data_root: str, pt_dir_root: str):
             csv_file,
             true_values=["TRUE", "True"],
             false_values=["FALSE", "False"]
-        ).drop(columns=["name", "steamid"])
+        ).drop(columns=["name", "steamid", "tick"])
 
         # 4. 显式转换为数值类型
         for col in df.columns:

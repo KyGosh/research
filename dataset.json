@@ -1,0 +1,245 @@
+{
+  "top1" : [
+    {
+      "name": "ZywOo",
+      "team" : "Vitality",
+      "match": [
+        "map1",
+        "map2",
+        "map3",
+        "map4",
+        "map5",
+        "map6",
+        "map7",
+        "map8",
+        "map9",
+        "map10"
+      ]
+    }
+  ],
+  "top2" : [
+    {
+      "name": "donk",
+      "team" : "Spirit",
+      "match": [
+
+      ]
+    }
+  ],
+  "top3" : [
+    {
+      "name": "ropz",
+      "team" : "Vitality",
+      "match": [
+        "map1",
+        "map2",
+        "map3",
+        "map4",
+        "map5",
+        "map6",
+        "map7",
+        "map8",
+        "map9",
+        "map10"
+      ]
+    }
+  ],
+  "top4" : [
+    {
+      "name": "m0NESY",
+      "team" : "Falcons",
+      "match": [
+
+      ]
+    }
+  ],
+  "top5" : [
+    {
+      "name": "sh1ro",
+      "team" : "Spirit",
+      "match": [
+
+      ]
+    }
+  ],
+  "top6" : [
+    {
+      "name": "molodoy",
+      "team" : "FURIA",
+      "match": [
+        "map1",
+        "map2",
+        "map3",
+        "map4",
+        "map5",
+        "map6",
+        "map7",
+        "map8",
+        "map9",
+        "map10"
+      ]
+    }
+  ],
+  "top7" : [
+    {
+      "name": "flameZ",
+      "team" : "Vitality",
+      "match": [
+        "map1",
+        "map2",
+        "map3",
+        "map4",
+        "map5",
+        "map6",
+        "map7",
+        "map8",
+        "map9",
+        "map10"
+      ]
+    }
+  ],
+  "top8" : [
+    {
+      "name": "frozen",
+      "team" : "FaZe",
+      "match": [
+
+      ]
+    }
+  ],
+  "top9" : [
+    {
+      "name": "KSCERATO",
+      "team" : "FURIA",
+      "match": [
+        "map1",
+        "map2",
+        "map3",
+        "map4",
+        "map5",
+        "map6",
+        "map7",
+        "map8",
+        "map9",
+        "map10"
+      ]
+    }
+  ],
+  "top10" : [
+    {
+      "name": "Spinx",
+      "team" : "MOUZ",
+      "match": [
+
+      ]
+    }
+  ],
+  "top11" : [
+    {
+      "name": "Twistzz",
+      "team" : "FaZe",
+      "match": [
+
+      ]
+    }
+  ],
+  "top12" : [
+    {
+      "name": "mezii",
+      "team" : "Vitality",
+      "match": [
+        "map1",
+        "map2",
+        "map3",
+        "map4",
+        "map5",
+        "map6",
+        "map7",
+        "map8",
+        "map9",
+        "map10"
+      ]
+    }
+  ],
+  "top13" : [
+    {
+      "name": "Senzu",
+      "team" : "The MongolZ",
+      "match": [
+
+      ]
+    }
+  ],
+  "top14" : [
+    {
+      "name": "XANTARES",
+      "team" : "Aurora",
+      "match": [
+
+      ]
+    }
+  ],
+  "top15" : [
+    {
+      "name": "YEKINDAR",
+      "team" : "FURIA",
+      "match": [
+        "map1",
+        "map2",
+        "map3",
+        "map4",
+        "map5",
+        "map6",
+        "map7",
+        "map8",
+        "map9",
+        "map10"
+      ]
+    }
+  ],
+  "top16" : [
+    {
+      "name": "xertioN",
+      "team" : "MOUZ",
+      "match": [
+
+      ]
+    }
+  ],
+  "top17" : [
+    {
+      "name": "torzsi",
+      "team" : "MOUZ",
+      "match": [
+
+      ]
+    }
+  ],
+  "top18" : [
+    {
+      "name": "NiKo",
+      "team" : "Falcons",
+      "match": [
+
+      ]
+    }
+  ],
+  "top19" : [
+    {
+      "name": "iM",
+      "team" : "Natus Vincere",
+      "match": [
+
+      ]
+    }
+  ],
+  "top20" : [
+    {
+      "name": "b1t",
+      "team" : "Natus Vincere",
+      "match": [
+
+      ]
+    }
+  ]
+}
