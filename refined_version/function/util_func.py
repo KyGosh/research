@@ -80,7 +80,7 @@ def discretize_mouse_data(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-
+# 获取指定路径中的地图列表
 def list_maps(processed_root: str) -> list[str]:
     maps = []
     for d in os.listdir(processed_root):
@@ -91,3 +91,72 @@ def list_maps(processed_root: str) -> list[str]:
             maps.append(d)
     maps.sort(key=lambda x: int(re.findall(r"\d+", x)[0]) if re.findall(r"\d+", x) else 0)
     return maps
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# 作图
+def make_graph(file: str):
+    if not os.path.exists(file):
+        print(f"Error: {file} not found.")
+        return
+
+    # 1. 加载数据
+    with open(file, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    df = pd.DataFrame(data['experiments'])
+
+    # 统一设置绘图风格
+    sns.set_theme(style="ticks", palette="pastel")
+    plt.rcParams['font.sans-serif'] = ['Arial']
+
+    # 定义绘图函数以减少重复代码
+    def create_summary_boxplot(y_metric, title, ylabel, filename, ylim_bottom):
+        plt.figure(figsize=(10, 8))
+
+        # 绘制箱线图
+        # order 指定横坐标顺序，确保对比逻辑一致
+        order = ["keyboard", "mouse", "combined"]
+        sns.boxplot(data=df, x='type', y=y_metric, order=order, width=0.5, fliersize=0, palette='deep')
+
+        # 叠加散点图（SwarmPlot），展示每一个玩家的具体位置
+        sns.swarmplot(data=df, x='type', y=y_metric, order=order,
+                      color=".25", size=6, alpha=0.8)
+
+        plt.title(title, fontsize=16, fontweight='bold', pad=20)
+        plt.xlabel('Type', fontsize=13)
+        plt.ylabel(ylabel, fontsize=13)
+        plt.ylim(ylim_bottom, 1.02 if y_metric == 'avg_auc' else df[y_metric].max() * 1.1)
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+
+        plt.tight_layout()
+        plt.savefig(filename, dpi=300)
+        plt.close()
+
+    # 2. 生成 AUC 箱线图
+    create_summary_boxplot(
+        y_metric='avg_auc',
+        title='Distribution of Avg Test AUC by Type (N=10 Players)',
+        ylabel='Average AUC Score',
+        filename='boxplot_auc_by_type.png',
+        ylim_bottom=0.55
+    )
+
+    # 3. 生成 EER 箱线图
+    create_summary_boxplot(
+        y_metric='avg_eer',
+        title='Distribution of Avg Test EER by Type (N=10 Players)',
+        ylabel='Average Equal Error Rate (EER)',
+        filename='boxplot_eer_by_type.png',
+        ylim_bottom=-0.01
+    )
+
+# 获取当前pt_data数据库中的玩家列表
+def players_in_dataset() -> None:
+    path = os.path.join("d:\\", "Project", "Research", "pt_data")
+    subdirs = [
+        entry.name for entry in os.scandir(path)
+        if entry.is_dir()
+    ]
+    print(subdirs)

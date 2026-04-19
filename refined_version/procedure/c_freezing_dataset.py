@@ -24,7 +24,7 @@ def freeze_dataset(input_dir, output_dir, target_player, data_type, total_folds=
     # 1. 搜集所有玩家的 manifest
     player_manifests = {}
     for p_dir in input_root.iterdir():
-        manifest_path = p_dir / "manifest.json"
+        manifest_path = p_dir / "manifest_1.json"
         if p_dir.is_dir() and manifest_path.exists():
             all_samples = load_json(manifest_path)
             # 过滤指定类型的样本
@@ -115,15 +115,16 @@ def freeze_dataset(input_dir, output_dir, target_player, data_type, total_folds=
 
     print(f"\n[Success] Final manifest saved to: {output_path}")
 
+PLAYERS = ['apEX', 'FalleN', 'flameZ', 'KSCERATO', 'mezii', 'molodoy', 'ropz', 'YEKINDAR', 'yuurih', 'ZywOo']
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Freeze LOMO dataset for a specific player and type.")
-    parser.add_argument("--input_dir", default=os.path.join("d:\\", "Project", "Research", "pt_data"), help="Directory containing player manifest.json files.")
-    parser.add_argument("--output_dir", default=os.path.join("d:\\", "Project", "Research", "output"), help="Directory to save the final experiment JSON.")
+    parser.add_argument("--input_dir", default=os.path.join("d:\\", "Project", "Research", "pt_data_origin"), help="Directory containing player manifest.json files.")
+    parser.add_argument("--output_dir", default=os.path.join("d:\\", "Project", "Research", "output_origin"), help="Directory to save the final experiment JSON.")
     parser.add_argument("--player", default="apEX", help="The target player name (POS class).")
-    parser.add_argument("--type", choices=["mouse", "keyboard", "combined"], default="combined",
-                        help="Data type to process.")
     parser.add_argument("--folds", type=int, default=10, help="Number of LOMO folds (limited by available maps).")
 
     args = parser.parse_args()
-    freeze_dataset(args.input_dir, args.output_dir, args.player, args.type, args.folds)
+    freeze_dataset(args.input_dir, args.output_dir, args.player, "mouse", args.folds)
+    freeze_dataset(args.input_dir, args.output_dir, args.player, "keyboard", args.folds)
+    freeze_dataset(args.input_dir, args.output_dir, args.player, "combined", args.folds)

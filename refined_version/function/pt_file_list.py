@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-def generate_player_manifests(pt_root="d:\\Project\\Research\\pt_data"):
+def generate_player_manifests(pt_root="d:\\Project\\Research\\pt_data_origin"):
     """
     扫描 pt_root 目录，为每个玩家生成一个 manifest.json。
     结构：pt_data/{player}/manifest.json
@@ -37,7 +37,7 @@ def generate_player_manifests(pt_root="d:\\Project\\Research\\pt_data"):
                 print(f"Skipping {pt_file}: {e}")
         
         # 将该玩家的索引写入该玩家目录
-        output_path = player_dir / "manifest.json"
+        output_path = player_dir / "manifest_1.json"
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(manifest, f, indent=4, ensure_ascii=False)
         

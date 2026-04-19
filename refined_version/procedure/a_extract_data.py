@@ -140,8 +140,8 @@ def extract_mouse_characteristics(raw_file: str) -> pd.DataFrame:
     df_raw["jerk"] = df_raw.groupby("name")["acc"].diff()
 
     df = df_raw.bfill().fillna(0)
-    from refined_version.function.util_func import discretize_mouse_data
-    df = discretize_mouse_data(df)
+    # from refined_version.function.util_func import discretize_mouse_data
+    # df = discretize_mouse_data(df)
     return df.drop(columns=["pitch", "yaw"])
 
 
@@ -199,7 +199,7 @@ def main():
     parser.add_argument("--origin-dir", type=str,
                         default=os.path.join("d:\\", "Project", "Research", "origin_data"))
     parser.add_argument("--out-dir", type=str,
-                        default=os.path.join("d:\\", "Project", "Research", "test_data"))
+                        default=os.path.join("d:\\", "Project", "Research", "test_data_origin"))
     # the size of time window, 1 s = 64 tick
     parser.add_argument("--segment-ticks", type=int, default=640)
     # 0.0 ==> 1 ~ 640, 640 ~ 1280 || 0.5 ==> 1 ~ 640, 320 ~ 960

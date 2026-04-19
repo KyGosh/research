@@ -160,11 +160,13 @@ def train_fold(fold_idx, fold_data, args, device, plot_dir):
 
     return {"val": {"auc": vauc}, "test": {"acc": tacc, "auc": tauc, "eer": teer}}
 
+PLAYERS = ['apEX', 'FalleN', 'flameZ', 'KSCERATO', 'mezii', 'molodoy', 'ropz', 'YEKINDAR', 'yuurih', 'ZywOo']
+TYPES = ["mouse", "keyboard", "combined"]
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--manifest", type=str,
-                        default=os.path.join("d:\\", "Project", "Research", "output", "apEX_combined_folds.json"))
+    parser.add_argument("--player", type=str, default="apEX")
+    parser.add_argument("--type", type=str, default="combined")
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--bsz", type=int, default=128)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -177,11 +179,12 @@ def main():
     parser.add_argument("--workers", type=int, default=0, help="Set to 0 when using RAM cache")
     args = parser.parse_args()
 
-    exp_dir = os.path.dirname(args.manifest)
-    plot_dir = os.path.join(exp_dir, "plots")
+    manifest_file = os.path.join("d:\\", "Project", "Research", "output_origin", f"{args.player}_{args.type}_folds.json")
+    exp_dir = os.path.dirname(manifest_file)
+    plot_dir = os.path.join(exp_dir, "plots", f"{args.player}", f"{args.type}")
     os.makedirs(plot_dir, exist_ok=True)
 
-    with open(args.manifest, 'r') as f:
+    with open(manifest_file, 'r') as f:
         manifest = json.load(f)
 
     set_seed(manifest.get("seed", 42))
@@ -197,8 +200,39 @@ def main():
 
     t_aucs = [x["test"]["auc"] for x in results]
     t_eers = [x["test"]["eer"] for x in results]
+
+    min_auc = min(t_aucs)
+    max_auc = max(t_aucs)
+    min_eer = min(t_eers)
+    max_eer = max(t_eers)
     avg_auc = float(np.mean(t_aucs))
     avg_eer = float(np.mean(t_eers))
+
+    _res = {
+        "name" : args.player,
+        "type" : args.type,
+        "min_auc": min_auc,
+        "max_auc": max_auc,
+        "avg_auc": avg_auc,
+        "min_eer": min_eer,
+        "max_eer": max_eer,
+        "avg_eer": avg_eer,
+    }
+
+    total_performance = os.path.join(exp_dir, "total_performance.json")
+    # 读取旧数据
+    if os.path.exists(total_performance):
+        with open(total_performance, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    else:
+        data = {"experiments": []}
+
+    # 追加
+    data["experiments"].append(_res)
+
+    # 写回
+    with open(total_performance, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
 
     print(
         f"\n================== FINAL RESULTS ==================\nAvg Test AUC: {avg_auc:.4f}, Avg Test EER: {avg_eer:.4f}")

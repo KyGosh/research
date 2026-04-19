@@ -52,8 +52,8 @@ def process_single(csv_file: str, csv_data_root: str, pt_dir_root: str):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--csv-data", type=str, default=os.path.join("d:\\", "Project", "Research", "test_data"))
-    parser.add_argument("--pt-dir", type=str, default=os.path.join("d:\\", "Project", "Research", "pt_data"))
+    parser.add_argument("--csv-data", type=str, default=os.path.join("d:\\", "Project", "Research", "test_data_origin"))
+    parser.add_argument("--pt-dir", type=str, default=os.path.join("d:\\", "Project", "Research", "pt_data_origin"))
     parser.add_argument("--processors", type=int, default=multiprocessing.cpu_count() - 1)
     args = parser.parse_args()
 
