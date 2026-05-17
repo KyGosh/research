@@ -137,7 +137,7 @@ def make_graph(file: str):
     # 2. 生成 AUC 箱线图
     create_summary_boxplot(
         y_metric='avg_auc',
-        title='Distribution of Avg Test AUC by Type (N=10 Players)',
+        title='Distribution of AUC',
         ylabel='Average AUC Score',
         filename='boxplot_auc_by_type.png',
         ylim_bottom=0.55
@@ -146,7 +146,7 @@ def make_graph(file: str):
     # 3. 生成 EER 箱线图
     create_summary_boxplot(
         y_metric='avg_eer',
-        title='Distribution of Avg Test EER by Type (N=10 Players)',
+        title='Distribution of Avg Test EER by Type',
         ylabel='Average Equal Error Rate (EER)',
         filename='boxplot_eer_by_type.png',
         ylim_bottom=-0.01

@@ -9,6 +9,7 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import roc_auc_score, roc_curve
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import seaborn as sns
 
 import sys
 
@@ -76,7 +77,48 @@ def evaluate(model, loader, device):
     except Exception:
         auc = 0.0
     eer = compute_eer(gt, pr)
-    return acc, auc, eer
+    return acc, auc, eer, pr, gt
+
+
+def plot_far_frr(y_true, y_prob, save_path, title="FAR-FRR Curve"):
+    """绘制 FAR (FPR) 和 FRR (1-TPR) 随阈值变化的曲线"""
+    fpr, tpr, thresholds = roc_curve(y_true, y_prob)
+    frr = 1 - tpr
+
+    # 海报风格
+    sns.set_context("poster", font_scale=1.4)
+
+    plt.figure(figsize=(14, 7))
+
+    # 全局字体（匹配40pt正文）
+    plt.rcParams.update({
+        'font.size': 36,
+        'axes.titlesize': 40,
+        'axes.labelsize': 36,
+        'xtick.labelsize': 34,
+        'ytick.labelsize': 34,
+        'legend.fontsize': 32
+    })
+
+    plt.plot(thresholds, fpr, color='blue', label='FAR (False Acceptance Rate)', linewidth=2)
+    plt.plot(thresholds, frr, color='red', label='FRR (False Rejection Rate)', linewidth=2)
+
+    # 寻找 EER 的交点
+    eer_idx = np.argmin(np.abs(fpr - frr))
+    eer_val = (fpr[eer_idx] + frr[eer_idx]) / 2
+
+    plt.plot(thresholds[eer_idx], eer_val, 'ko', markersize=8, label=f'EER: {eer_val:.4f}')
+
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.0])
+    plt.xlabel('Threshold')
+    plt.ylabel('Rate')
+    plt.title("FAR-FRR Curve")
+    plt.legend(loc='upper center')
+    plt.grid(True, linestyle='--', alpha=0.7, linewidth=1.5)
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
 
 
 def train_fold(fold_idx, fold_data, args, device, plot_dir):
@@ -87,7 +129,7 @@ def train_fold(fold_idx, fold_data, args, device, plot_dir):
     val_ds = ManifestDataset(fold_data["valid"]["pos"], fold_data["valid"]["neg"], desc=f"Fold {fold_idx} Val")
     test_ds = ManifestDataset(fold_data["test"]["pos"], fold_data["test"]["neg"], desc=f"Fold {fold_idx} Test")
 
-    train_loader = DataLoader(train_ds, batch_size=args.bsz, shuffle=True, num_workers=0)  # 内存数据不需要多进程读
+    train_loader = DataLoader(train_ds, batch_size=args.bsz, shuffle=True, num_workers=0)
     val_loader = DataLoader(val_ds, batch_size=args.bsz, shuffle=False, num_workers=0)
     test_loader = DataLoader(test_ds, batch_size=args.bsz, shuffle=False, num_workers=0)
 
@@ -125,7 +167,7 @@ def train_fold(fold_idx, fold_data, args, device, plot_dir):
             train_losses.append(loss.item())
 
         train_loss = float(np.mean(train_losses))
-        vacc, vauc, veer = evaluate(model, val_loader, device)
+        vacc, vauc, veer, _, _ = evaluate(model, val_loader, device)
         history["val_auc"].append(vauc)
 
         print(f"Epoch [{epoch + 1:02d}/{args.epochs}] Loss: {train_loss:.4f} | Val AUC: {vauc:.4f}")
@@ -143,19 +185,53 @@ def train_fold(fold_idx, fold_data, args, device, plot_dir):
     if best_state is not None:
         model.load_state_dict(best_state)
 
-    # 绘制该 Fold 的训练曲线
-    plt.figure(figsize=(10, 5))
-    plt.plot(range(1, len(history["val_auc"]) + 1), history["val_auc"], marker='o', color='blue',
-             label='Validation AUC')
-    plt.title(f"Fold {fold_idx} Training Trend (Map: {fold_data['test_map']})")
+    # 海报风格（只影响视觉，不改变数据）
+    sns.set_context("poster", font_scale=1.4)
+
+    plt.figure(figsize=(12, 6))
+
+    # 全局字体（和你40pt正文匹配）
+    plt.rcParams.update({
+        'font.size': 36,
+        'axes.titlesize': 40,
+        'axes.labelsize': 36,
+        'xtick.labelsize': 34,
+        'ytick.labelsize': 34,
+        'legend.fontsize': 32
+    })
+
+    # 绘制曲线（增强可读性）
+    epochs = range(1, len(history["val_auc"]) + 1)
+    plt.plot(
+        epochs,
+        history["val_auc"],
+        marker='o',
+        markersize=8,  # 原来默认太小
+        linewidth=3,  # 线更粗，适合海报
+        color='blue',
+        label='Validation AUC'
+    )
+
+    # 标题与标签（统一用rcParams控制大小）
+    plt.title("Training Trend (Fold 0, Player_1)")
     plt.xlabel("Epoch")
     plt.ylabel("AUC")
-    plt.grid(True, linestyle='--', alpha=0.7)
+
+    # 网格稍微加粗
+    plt.grid(True, linestyle='--', alpha=0.7, linewidth=1.5)
+
     plt.legend()
-    plt.savefig(os.path.join(plot_dir, f"fold_{fold_idx}_history.png"))
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(plot_dir, f"fold_{fold_idx}_history.png"), dpi=300)
     plt.close()
 
-    tacc, tauc, teer = evaluate(model, test_loader, device)
+    # 最终评估与绘制 FAR/FRR 曲线
+    tacc, tauc, teer, pr, gt = evaluate(model, test_loader, device)
+
+    far_frr_path = os.path.join(plot_dir, f"fold_{fold_idx}_far_frr.png")
+    plot_far_frr(gt, pr, far_frr_path, title=f"Fold {fold_idx} (Map: {fold_data['test_map']}) FAR-FRR")
+
     print(f"Fold {fold_idx} Test Final -> AUC: {tauc:.4f}, EER: {teer:.4f}")
 
     return {"val": {"auc": vauc}, "test": {"acc": tacc, "auc": tauc, "eer": teer}}
@@ -179,7 +255,7 @@ def main():
     parser.add_argument("--workers", type=int, default=0, help="Set to 0 when using RAM cache")
     args = parser.parse_args()
 
-    manifest_file = os.path.join("d:\\", "Project", "Research", "output_origin", f"{args.player}_{args.type}_folds.json")
+    manifest_file = os.path.join("d:\\", "Project", "Research", "output_eer", f"{args.player}_{args.type}_folds.json")
     exp_dir = os.path.dirname(manifest_file)
     plot_dir = os.path.join(exp_dir, "plots", f"{args.player}", f"{args.type}")
     os.makedirs(plot_dir, exist_ok=True)

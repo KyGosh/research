@@ -42,9 +42,12 @@ def main():
     results = {}
     for type, level in DISCRETIZED_LEVELS.items():
         q_steps = np.linspace(0, 1, level)[1:-1]
-        quantiles = np.quantile(df_total[type], q_steps)
-        unique_quantiles = sorted(set(quantiles))
-        results[type] = unique_quantiles
+
+        # 0作为level 0分布
+        non_zero = df_total[df_total[type] != 0]
+
+        quantiles = np.quantile(non_zero[type], q_steps)
+        results[type] = sorted(quantiles)
 
     output_json = os.path.join(args.output_dir, "discretized_level.json")
     with open(output_json, "w") as f:
