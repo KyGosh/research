@@ -10,10 +10,10 @@ def test_map_func():
 
 
 def test_pt_file():
-    data = torch.load("D:\Project\Research\pt_data_origin\FalleN\map1\keyboard\\r1_seg1_kb.pt")
+    data = torch.load("D:\Project\Research\pt_data\FalleN\map1\keyboard\\r1_seg1_kb.pt")
     print(type(data))
     print(data)
-    data = torch.load("D:\Project\Research\pt_data_origin\FalleN\map1\mouse\\r1_seg1_ms.pt")
+    data = torch.load("D:\Project\Research\pt_data\FalleN\map1\mouse\\r1_seg1_ms.pt")
     print(type(data))
     print(data)
 

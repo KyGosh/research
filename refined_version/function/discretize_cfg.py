@@ -40,16 +40,23 @@ def main():
     # df_total = df_total.sample(frac=1, random_state=42)
 
     results = {}
+    # quantile切分
+    # for type, level in DISCRETIZED_LEVELS.items():
+    #     q_steps = np.linspace(0, 1, level)[1:-1]
+    #
+    #     # 0作为level 0分布
+    #     non_zero = df_total[df_total[type] != 0]
+    #
+    #     quantiles = np.quantile(non_zero[type], q_steps)
+    #     results[type] = sorted(quantiles)
+
+    # log后均分
     for type, level in DISCRETIZED_LEVELS.items():
-        q_steps = np.linspace(0, 1, level)[1:-1]
+        df_total[type] = np.log1p(df_total[type])
+        bins = np.linspace(df_total[type].min(), df_total[type].max(), level)[1: -1]
+        results[type] = sorted(bins)
 
-        # 0作为level 0分布
-        non_zero = df_total[df_total[type] != 0]
-
-        quantiles = np.quantile(non_zero[type], q_steps)
-        results[type] = sorted(quantiles)
-
-    output_json = os.path.join(args.output_dir, "discretized_level.json")
+    output_json = os.path.join(args.output_dir, "discretized_level_log.json")
     with open(output_json, "w") as f:
         json.dump(results, f, indent=4)
 

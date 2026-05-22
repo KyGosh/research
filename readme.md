@@ -151,3 +151,10 @@ todo list：
 LSTM -> TRANSFORMER
 
 quantile是否可取，存在level4范围过大的情况，不能真实反应速度差异，暂时保持使用
+
+update: 5.18
+
+1. 增加键盘特征：ducked和walking
+2. 调整quantile，选择使用log处理后均分的方式定义level
+
+ppt：修改后的结果图示
