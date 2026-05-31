@@ -5,7 +5,7 @@ import torch
 import matplotlib.pyplot as plt
 
 def test_map_func():
-    from refined_version.function.util_func import get_maps
+    from function.util_func import get_maps
     assert get_maps("d:\\Project\\Research\\origin_data\\mouse_data") == 10
 
 
@@ -19,19 +19,19 @@ def test_pt_file():
 
 
 def test_file_name():
-    from refined_version.function.util_func import players_in_dataset
+    from function.util_func import players_in_dataset
     players_in_dataset()
 
 
 def test_make_graph():
-    from refined_version.function.util_func import make_graph
+    from function.util_func import make_graph
     make_graph("d:\\Project\\Research\\output\\total_performance.json")
 
 PLAYERS = ['apEX', 'FalleN', 'flameZ', 'KSCERATO', 'mezii', 'molodoy', 'ropz', 'YEKINDAR', 'yuurih', 'ZywOo']
 
 def test_get_total_file():
     csv_files = []
-    for root, _, files in os.walk("d:\\Project\\Research\\test_data\\ZywOo"):
+    for root, _, files in os.walk("d:\\Project\\Research\\dataset\\extracted_data\\ZywOo"):
         for f in files:
             if f.endswith(".csv"):
                 csv_files.append(os.path.join(root, f))

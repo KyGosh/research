@@ -1,0 +1,67 @@
+# Project settings for execute.py
+players:
+  - apEX
+  - FalleN
+  - flameZ
+  - KSCERATO
+  - mezii
+  - molodoy
+  - ropz
+  - YEKINDAR
+  - yuurih
+  - ZywOo
+
+types:
+  - mouse
+  - keyboard
+  - combined
+
+actions:
+  model:
+    - train
+
+  dataset:
+    - extract # 提取特征
+    - convert # 转换为pt
+    - manifest # 生成manifest文件
+    - freeze # 冻结数据，便于复制
+
+  pre:
+    - discretize # 确定离散化分布，预处理，执行一次后无需重复
+
+overlap-ratio: 0.0
+time-window: 640
+fold: 10
+
+path:
+  origin: "d:\\Project\\Research\\dataset\\origin_data"
+  mouse: "d:\\Project\\Research\\dataset\\origin_data\\mouse_data"
+  keyboard: "d:\\Project\\Research\\dataset\\origin_data\\keyboard_data"
+  time: "d:\\Project\\Research\\dataset\\origin_data\\time_data"
+
+  extract: "d:\\Project\\Research\\dataset\\extracted_data"
+  pt: "d:\\Project\\Research\\dataset\\pt_data"
+
+  output: "d:\\Project\\Research\\output"
+  result: "d:\\Project\\Research\\result"
+
+model:
+  player: "apEX"
+  type: "mouse"
+  epochs: 100
+  bsz: 128
+  lr: 0.001
+  weight-decay: 0.00001
+  hidden-dim: 64
+  num-layers: 2
+  dropout: 0.3
+  patience: 10
+  use-attention: true
+  workers: 0 # Set to 0 when using RAM cache
+
+way: "model" # "model" or "dataset" or "all"
+
+defaults:
+  parallel: 1
+  verbose: false
+  # add other defaults as needed, e.g., steps: [extract, convert, freeze, train]

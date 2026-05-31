@@ -1,5 +1,4 @@
 # generate .pt files
-import argparse
 import multiprocessing
 import os
 from functools import partial
@@ -36,7 +35,6 @@ def process_single(csv_file: str, csv_data_root: str, pt_dir_root: str):
         if data_np.shape[0] > 640:
             data_np = data_np[:640, :]
         elif data_np.shape[0] < 640:
-            # 如果太短，可以考虑跳过或者补齐，这里选择保留（LSTM可变长）
             pass
 
         # 7. 保存为原始 Tensor（ManifestDataset 期望的格式）
@@ -50,37 +48,37 @@ def process_single(csv_file: str, csv_data_root: str, pt_dir_root: str):
         return None
 
 
+import yaml
+with open("../setting.yaml", "r", encoding="utf-8") as f:
+    cfg = yaml.safe_load(f)
+
+EXTRACTED_DIR = cfg["path"]["extract"]
+PT_DIR = cfg["path"]["pt"]
+
+PROCESSORS = multiprocessing.cpu_count() - 1
+
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--csv-data", type=str, default=os.path.join("d:\\", "Project", "Research", "test_data"))
-    parser.add_argument("--pt-dir", type=str, default=os.path.join("d:\\", "Project", "Research", "pt_data"))
-    parser.add_argument("--processors", type=int, default=multiprocessing.cpu_count() - 1)
-    args = parser.parse_args()
-
-    csv_data = args.csv_data
-    pt_dir = args.pt_dir
-
-    if not os.path.exists(csv_data):
-        print(f"Error: {csv_data} does not exist.")
+    if not os.path.exists(EXTRACTED_DIR):
+        print(f"Error: {EXTRACTED_DIR} does not exist.")
         return
-    print(f"Scanning directories: {csv_data}")
+    print(f"Scanning directories: {EXTRACTED_DIR}")
 
     csv_files = []
-    for root, _, files in os.walk(csv_data):
+    for root, _, files in os.walk(EXTRACTED_DIR):
         for f in files:
             if f.endswith(".csv"):
                 csv_files.append(os.path.join(root, f))
     print(f"Found {len(csv_files)} csv files")
 
     # Process in parallel
-    process_func = partial(process_single, csv_data_root=csv_data, pt_dir_root=pt_dir)
+    process_func = partial(process_single, csv_data_root=EXTRACTED_DIR, pt_dir_root=PT_DIR)
 
-    print(f"Processing with {max(1, args.processors)} workers...")
-    with multiprocessing.Pool(max(1, args.processors)) as pool:
+    print(f"Processing with {max(1, PROCESSORS)} workers...")
+    with multiprocessing.Pool(max(1, PROCESSORS)) as pool:
         for _ in tqdm(pool.imap_unordered(process_func, csv_files), total=len(csv_files)):
             pass
 
-    print(f"Done! Files saved to {pt_dir}")
+    print(f"Done! Files saved to {PT_DIR}")
     return
 
 

@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-def generate_player_manifests(pt_root="d:\\Project\\Research\\pt_data"):
+def generate_player_manifests(pt_root="d:\\Project\\Research\\dataset\\pt_data"):
     """
     扫描 pt_root 目录，为每个玩家生成一个 manifest.json。
     结构：pt_data/{player}/manifest.json

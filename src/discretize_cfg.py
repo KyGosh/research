@@ -1,10 +1,8 @@
-# 输出序列化的配置文件，确认不同等级的threshold值
-import argparse
 import json
-
 import numpy as np
 import pandas as pd
 import os
+import yaml
 
 DISCRETIZED_LEVELS = {
     "dp": 5,
@@ -14,17 +12,18 @@ DISCRETIZED_LEVELS = {
     "jerk": 5
 }
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--mouse_dir", type=str, default=os.path.join("d:\\", "Project", "Research", "origin_data", "mouse_data"))
-    parser.add_argument("--time_dir", type=str, default=os.path.join("d:\\", "Project", "Research", "origin_data", "time_data"))
-    parser.add_argument("--output_dir", type=str, default="d:\\Project\\Research\\output")
-    args = parser.parse_args()
+with open("../setting.yaml", "r", encoding="utf-8") as f:
+    cfg = yaml.safe_load(f)
 
+MOUSE_DIR = cfg["path"]["mouse"]
+TIME_DIR = cfg["path"]["time"]
+OUTPUT_DIR = cfg["path"]["output"]
+
+def main():
     all_data = []
-    from util_func import process_map_data
+    from function.util_func import process_map_data
     for i in range(1, 11):
-        df_map = process_map_data(i, args.mouse_dir, args.time_dir)
+        df_map = process_map_data(i, MOUSE_DIR, TIME_DIR)
         if not df_map.empty:
             all_data.append(df_map)
 
@@ -56,7 +55,8 @@ def main():
         bins = np.linspace(df_total[type].min(), df_total[type].max(), level)[1: -1]
         results[type] = sorted(bins)
 
-    output_json = os.path.join(args.output_dir, "discretized_level_log.json")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    output_json = os.path.join(OUTPUT_DIR, "discretized_level_log.json")
     with open(output_json, "w") as f:
         json.dump(results, f, indent=4)
 

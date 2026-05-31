@@ -2,15 +2,9 @@
 
 .idea/
 experiments/
-main.py
-
-origin_data/
-processed_data/
-pt_data/
-test_data/
-test_data_origin/
-pt_data_origin/
-
 output/
+result/
 
 *.xmind
+*.txt
+*.png

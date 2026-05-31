@@ -1,7 +1,5 @@
-import os
 import json
 import random
-import argparse
 from pathlib import Path
 
 '''
@@ -115,16 +113,17 @@ def freeze_dataset(input_dir, output_dir, target_player, data_type, total_folds=
 
     print(f"\n[Success] Final manifest saved to: {output_path}")
 
-PLAYERS = ['apEX', 'FalleN', 'flameZ', 'KSCERATO', 'mezii', 'molodoy', 'ropz', 'YEKINDAR', 'yuurih', 'ZywOo']
+import yaml
+with open("../setting.yaml", "r", encoding="utf-8") as f:
+    cfg = yaml.safe_load(f)
+
+PT_DIR = cfg["path"]["pt"]
+OUTPUT_DIR = cfg["path"]["output"]
+PLAYERS = cfg["players"]
+TYPES = cfg["types"]
+FOLDS = cfg["fold"]
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Freeze LOMO dataset for a specific player and type.")
-    parser.add_argument("--input_dir", default=os.path.join("d:\\", "Project", "Research", "pt_data"), help="Directory containing player manifest.json files.")
-    parser.add_argument("--output_dir", default=os.path.join("d:\\", "Project", "Research", "output"), help="Directory to save the final experiment JSON.")
-    parser.add_argument("--player", default="apEX", help="The target player name (POS class).")
-    parser.add_argument("--folds", type=int, default=10, help="Number of LOMO folds (limited by available maps).")
-
-    args = parser.parse_args()
-    freeze_dataset(args.input_dir, args.output_dir, args.player, "mouse", args.folds)
-    freeze_dataset(args.input_dir, args.output_dir, args.player, "keyboard", args.folds)
-    freeze_dataset(args.input_dir, args.output_dir, args.player, "combined", args.folds)
+    for player in PLAYERS:
+        for type_ in TYPES:
+            freeze_dataset(PT_DIR, OUTPUT_DIR, player, type_, FOLDS)

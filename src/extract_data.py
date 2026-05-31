@@ -1,4 +1,3 @@
-import argparse
 import os
 import re
 import shutil
@@ -140,7 +139,7 @@ def extract_mouse_characteristics(raw_file: str) -> pd.DataFrame:
     df_raw["jerk"] = df_raw.groupby("name")["acc"].diff()
 
     df = df_raw.bfill().fillna(0)
-    from refined_version.function.util_func import discretize_mouse_data
+    from function.util_func import discretize_mouse_data
     df = discretize_mouse_data(df)
     return df.drop(columns=["pitch", "yaw"])
 
@@ -193,32 +192,26 @@ def extract_data(origin_dir: str, out_dir: str, segment_ticks: int, overlap_rati
             }
             save_player_segments(segments_by_round, directory[name], player_dfs, segment_ticks)
 
+import yaml
+with open("../setting.yaml", "r", encoding="utf-8") as f:
+    cfg = yaml.safe_load(f)
+
+ORIGIN_DIR = cfg["path"]["origin"]
+EXTRACTED_DIR = cfg["path"]["extract"]
+SEGMENT_TICKS = cfg["time-window"]
+OVERLAP_RATIO = cfg["overlap-ratio"]
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--origin-dir", type=str,
-                        default=os.path.join("d:\\", "Project", "Research", "origin_data"))
-    parser.add_argument("--out-dir", type=str,
-                        default=os.path.join("d:\\", "Project", "Research", "test_data"))
-    # the size of time window, 1 s = 64 tick
-    parser.add_argument("--segment-ticks", type=int, default=640)
-    # 0.0 ==> 1 ~ 640, 640 ~ 1280 || 0.5 ==> 1 ~ 640, 320 ~ 960
-    parser.add_argument("--overlap-ratio", type=float, default=0.0)
-    args = parser.parse_args()
-
     # parameter validation
-    if not os.path.exists(args.origin_dir):
-        print(f"{args.origin_dir} does not exist")
-        return
-    if args.overlap_ratio < 0.0 or args.overlap_ratio > 1.0:
-        print(f"{args.overlap_ratio} is outside of [0, 1]")
+    if not os.path.exists(ORIGIN_DIR):
+        print(f"{ORIGIN_DIR} does not exist")
         return
 
     # delete out_dir each time to avoid redundant data for different arguments
-    if os.path.isdir(args.out_dir):
-        shutil.rmtree(args.out_dir)
+    if os.path.isdir(EXTRACTED_DIR):
+        shutil.rmtree(EXTRACTED_DIR)
 
-    extract_data(args.origin_dir, args.out_dir, args.segment_ticks, args.overlap_ratio)
+    extract_data(ORIGIN_DIR, EXTRACTED_DIR, SEGMENT_TICKS, OVERLAP_RATIO)
 
     print("Extract data process finished.")
     return
