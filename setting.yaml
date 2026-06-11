@@ -29,8 +29,8 @@ actions:
   pre:
     - discretize # 确定离散化分布，预处理，执行一次后无需重复
 
-overlap-ratio: 0.0
-time-window: 640
+overlap-ratio: 0.9
+time-window: 320
 fold: 10
 
 path:
@@ -48,6 +48,7 @@ path:
 model:
   player: "apEX"
   type: "mouse"
+  arch: "transformer"
   epochs: 100
   bsz: 128
   lr: 0.001

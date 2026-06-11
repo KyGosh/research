@@ -32,6 +32,7 @@ DROPOUT = cfg["model"]["dropout"]
 USE_ATTENTION = cfg["model"]["use-attention"]
 NUM_LAYERS = cfg["model"]["num-layers"]
 EPOCH = cfg["model"]["epochs"]
+ARCH = cfg["model"].get("arch", "lstm")
 
 def set_seed(s: int):
     random.seed(s)
@@ -142,7 +143,8 @@ def train_fold(fold_idx, fold_data, device, plot_dir):
         hidden_dim=HIDDEN_DIM,
         num_layers=NUM_LAYERS,
         dropout=DROPOUT,
-        use_attention=USE_ATTENTION
+        use_attention=USE_ATTENTION,
+        arch=ARCH
     ).to(device)
 
     opt = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=DECAY)

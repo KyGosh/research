@@ -1,6 +1,7 @@
 # generate .pt files
 import multiprocessing
 import os
+import shutil
 from functools import partial
 
 import pandas as pd
@@ -69,6 +70,9 @@ def main():
             if f.endswith(".csv"):
                 csv_files.append(os.path.join(root, f))
     print(f"Found {len(csv_files)} csv files")
+
+    if os.path.isdir(PT_DIR):
+        shutil.rmtree(PT_DIR)
 
     # Process in parallel
     process_func = partial(process_single, csv_data_root=EXTRACTED_DIR, pt_dir_root=PT_DIR)
