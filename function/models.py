@@ -55,6 +55,41 @@ class LSTMEncoder(nn.Module):
             
         return self.proj(h)
 
+
+class GRUEncoder(nn.Module):
+    def __init__(self, input_dim: int, hidden_dim: int = 128, num_layers: int = 2, bidirectional: bool = False, dropout: float = 0.1, use_attention: bool = False):
+        super().__init__()
+        self.use_attention = use_attention
+        self.gru = nn.GRU(input_dim, hidden_dim, num_layers=num_layers, batch_first=True, bidirectional=bidirectional, dropout=dropout if num_layers > 1 else 0)
+        out_dim = hidden_dim * (2 if bidirectional else 1)
+        
+        if self.use_attention:
+            self.attention = nn.Sequential(
+                nn.Linear(out_dim, out_dim),
+                nn.Tanh(),
+                nn.Linear(out_dim, 1, bias=False)
+            )
+            
+        self.proj = nn.Sequential(nn.LayerNorm(out_dim), nn.Linear(out_dim, out_dim), nn.ReLU())
+
+    def forward(self, x):
+        output, hn = self.gru(x)
+        
+        if self.use_attention:
+            # output shape: (batch, seq_len, out_dim)
+            attn_weights = torch.softmax(self.attention(output), dim=1) # (batch, seq_len, 1)
+            h = torch.sum(output * attn_weights, dim=1) # (batch, out_dim)
+        else:
+            # hn shape: (num_layers * num_directions, batch, hidden_dim)
+            # handle bidirectional hn
+            if self.gru.bidirectional:
+                h = torch.cat([hn[-2], hn[-1]], dim=-1)
+            else:
+                h = hn[-1]
+            
+        return self.proj(h)
+
+
 class TransformerEncoderModule(nn.Module):
     def __init__(self, input_dim: int, hidden_dim: int = 128, num_layers: int = 2, nhead: int = 8, dropout: float = 0.1, use_attention: bool = False):
         super().__init__()
@@ -115,6 +150,9 @@ class UnifiedModel(nn.Module):
         if arch == 'lstm':
             self.enc = LSTMEncoder(input_dim, hidden_dim, num_layers, bidirectional, dropout, use_attention)
             out_dim = hidden_dim * (2 if bidirectional else 1)
+        elif arch == 'gru':
+            self.enc = GRUEncoder(input_dim, hidden_dim, num_layers, bidirectional, dropout, use_attention)
+            out_dim = hidden_dim * (2 if bidirectional else 1)
         elif arch == 'transformer':
             self.enc = TransformerEncoderModule(input_dim, hidden_dim, num_layers, nhead=8, dropout=dropout, use_attention=use_attention)
             out_dim = hidden_dim
@@ -137,6 +175,10 @@ class FusionModel(nn.Module):
         if arch == 'lstm':
             self.kb_enc = LSTMEncoder(kb_input_dim, hidden_dim, num_layers, bidirectional, dropout)
             self.ms_enc = LSTMEncoder(ms_input_dim, hidden_dim, num_layers, bidirectional, dropout)
+            out_dim = hidden_dim * (2 if bidirectional else 1)
+        elif arch == 'gru':
+            self.kb_enc = GRUEncoder(kb_input_dim, hidden_dim, num_layers, bidirectional, dropout)
+            self.ms_enc = GRUEncoder(ms_input_dim, hidden_dim, num_layers, bidirectional, dropout)
             out_dim = hidden_dim * (2 if bidirectional else 1)
         elif arch == 'transformer':
             self.kb_enc = TransformerEncoderModule(kb_input_dim, hidden_dim, num_layers, nhead=8, dropout=dropout)

@@ -33,9 +33,9 @@ def process_single(csv_file: str, csv_data_root: str, pt_dir_root: str):
 
         # 6. 转换为 numpy 并裁剪到 640 ticks (参考 serialize_features.py)
         data_np = df_selected.values.astype("float32")
-        if data_np.shape[0] > 640:
-            data_np = data_np[:640, :]
-        elif data_np.shape[0] < 640:
+        if data_np.shape[0] > WINDOW_SIZE:
+            data_np = data_np[:WINDOW_SIZE, :]
+        elif data_np.shape[0] < WINDOW_SIZE:
             pass
 
         # 7. 保存为原始 Tensor（ManifestDataset 期望的格式）
@@ -55,6 +55,7 @@ with open("../setting.yaml", "r", encoding="utf-8") as f:
 
 EXTRACTED_DIR = cfg["path"]["extract"]
 PT_DIR = cfg["path"]["pt"]
+WINDOW_SIZE = cfg["time-window"]
 
 PROCESSORS = multiprocessing.cpu_count() - 1
 
