@@ -39,22 +39,39 @@ CONFIG = load_config()
 
 def main():
     
-    # Available steps mapping to script filenames
-    STEP_MAP = {
-        "extract": "extract_data.py",
-        "convert": "convert_pt.py",
-        "freeze": "freezing_dataset.py",
-        "manifest": "pt_file_list.py",
-        "train": "train_model.py"
-    }
+    TASK = CONFIG.get("task", "authentication")
 
-    WAY = CONFIG["way"]
-    if WAY == "model":
-        selected_steps = ["train"]
-    elif WAY == "dataset":
-        selected_steps = ["extract", "convert", "manifest", "freeze"]
+    if TASK == "identification":
+        # Multi-class Identification Pipeline (using direct-to-tensor parsing)
+        STEP_MAP = {
+            "parse": "parse_demo_to_pt.py",
+            "manifest": "pt_file_list.py",
+            "freeze": "freezing_dataset.py",
+            "train": "train_model.py"
+        }
+        WAY = CONFIG["way"]
+        if WAY == "model":
+            selected_steps = ["train"]
+        elif WAY == "dataset":
+            selected_steps = ["parse", "manifest", "freeze"]
+        else:
+            selected_steps = ["parse", "manifest", "freeze", "train"]
     else:
-        selected_steps = ["extract", "convert", "manifest", "freeze", "train"]
+        # Original Binary Authentication Pipeline
+        STEP_MAP = {
+            "extract": "extract_data.py",
+            "convert": "convert_pt.py",
+            "manifest": "pt_file_list.py",
+            "freeze": "freezing_dataset.py",
+            "train": "train_model.py"
+        }
+        WAY = CONFIG["way"]
+        if WAY == "model":
+            selected_steps = ["train"]
+        elif WAY == "dataset":
+            selected_steps = ["extract", "convert", "manifest", "freeze"]
+        else:
+            selected_steps = ["extract", "convert", "manifest", "freeze", "train"]
 
     print("="*60)
     print("  PIPELINE START (Config-driven)")

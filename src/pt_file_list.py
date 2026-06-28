@@ -1,7 +1,14 @@
 import json
+import yaml
 from pathlib import Path
 
-def generate_player_manifests(pt_root="d:\\Project\\Research\\dataset\\pt_data"):
+# Load configuration
+with open("../setting.yaml", "r", encoding="utf-8") as f:
+    cfg = yaml.safe_load(f)
+
+PT_DIR = cfg["path"]["pt"]
+
+def generate_player_manifests(pt_root):
     """
     扫描 pt_root 目录，为每个玩家生成一个 manifest.json。
     结构：pt_data/{player}/manifest.json
@@ -20,16 +27,16 @@ def generate_player_manifests(pt_root="d:\\Project\\Research\\dataset\\pt_data")
         manifest = []
         
         # 递归查找所有 .pt 文件
-        # 预期结构: pt_data/{player}/{map}/{type}/*.pt
+        # 预期结构: pt_data/{player}/{match_id}/{type}/*.pt
         for pt_file in player_dir.rglob("*.pt"):
             # 获取相对于玩家目录的路径部分
             try:
                 relative_parts = pt_file.relative_to(player_dir).parts
                 if len(relative_parts) >= 2:
-                    # 假设路径为: map1/mouse/r1_seg1.pt
+                    # 假设路径为: match_id/mouse/r1_seg1.pt
                     mapping_info = {
                         "path": str(pt_file.as_posix()),
-                        "map": relative_parts[0],
+                        "match_id": relative_parts[0],
                         "type": relative_parts[1]
                     }
                     manifest.append(mapping_info)
@@ -44,4 +51,4 @@ def generate_player_manifests(pt_root="d:\\Project\\Research\\dataset\\pt_data")
         print(f"Done: {player_name} -> {len(manifest)} samples recorded in {output_path}")
 
 if __name__ == "__main__":
-    generate_player_manifests()
+    generate_player_manifests(PT_DIR)

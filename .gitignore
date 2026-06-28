@@ -4,6 +4,7 @@
 experiments/
 output/
 result/
+old_results/
 
 *.xmind
 *.txt

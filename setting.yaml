@@ -1,15 +1,15 @@
 # Project settings for execute.py
 players:
-  - apEX
-  - FalleN
-  - flameZ
-  - KSCERATO
-  - mezii
+  - kyxsan
+  - m0NESY
+  - TeSeS
+  - kyousuke
+  - NiKo
   - molodoy
-  - ropz
+  - KSCERATO
   - YEKINDAR
   - yuurih
-  - ZywOo
+  - FalleN
 
 types:
   - mouse
@@ -34,20 +34,22 @@ time-window: 640
 fold: 10
 
 path:
-  origin: "d:\\Project\\Research\\dataset\\origin_data"
-  mouse: "d:\\Project\\Research\\dataset\\origin_data\\mouse_data"
-  keyboard: "d:\\Project\\Research\\dataset\\origin_data\\keyboard_data"
-  time: "d:\\Project\\Research\\dataset\\origin_data\\time_data"
+  demos: "d:\\Project\\cs2_parser\\demoparser\\demo_file"
 
-  extract: "d:\\Project\\Research\\dataset\\extracted_data"
+  origin: "d:\\Project\\Research\\dataset\\origin_data"
+  mouse: "d:\\Project\\Research\\dataset\\origin_data\\mouse_data_f_f"
+  keyboard: "d:\\Project\\Research\\dataset\\origin_data\\keyboard_data_f_f"
+  time: "d:\\Project\\Research\\dataset\\origin_data\\time_data_f_f"
+
+  extract: "d:\\Project\\Research\\dataset\\extracted_data_f_f"
   pt: "d:\\Project\\Research\\dataset\\pt_data"
 
   output: "d:\\Project\\Research\\output"
   result: "d:\\Project\\Research\\result"
 
 model:
-  player: "apEX"
-  type: "combined"
+  player: "FalleN"
+  type: "keyboard"
   arch: "gru"
   epochs: 100
   bsz: 128
@@ -61,6 +63,7 @@ model:
   workers: 0 # Set to 0 when using RAM cache
 
 way: "model" # "model" or "dataset" or "all"
+task: "identification" # "authentication" or "identification"
 
 defaults:
   parallel: 1

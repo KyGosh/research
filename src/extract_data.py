@@ -23,9 +23,9 @@ def sort_by_map(directory: str) -> Tuple[dict[str, dict[str, str]], dict[str, li
     map_data: dict[str, dict[str, str]] = {}
     map_players: dict[str, list[str]] = {}
 
-    keyboard = os.path.join(directory, "keystroke_data")
-    mouse = os.path.join(directory, "mouse_data")
-    time = os.path.join(directory, "time_data")
+    keyboard = os.path.join(directory, "keystroke_data_f_f")
+    mouse = os.path.join(directory, "mouse_data_f_f")
+    time = os.path.join(directory, "time_data_f_f")
 
     def collect(target: str, key_name: str):
         for root, _, files in os.walk(target):

@@ -65,3 +65,35 @@ def test_graph_size():
     plt.tight_layout()
     plt.savefig(("test.png"), dpi=300)
     plt.close()
+
+
+def test_new_pt_file():
+    pt_root = "D:\\Project\\Research\\dataset\\pt_data"
+    if not os.path.exists(pt_root):
+        print(f"\n[ERROR] pt_root directory does not exist: {pt_root}")
+        return
+
+    pt_files = []
+    for root, _, files in os.walk(pt_root):
+        for f in files:
+            if f.endswith(".pt"):
+                pt_files.append(os.path.join(root, f))
+
+    if not pt_files:
+        print("\n[WARNING] No .pt files found in the dataset.")
+        return
+
+    print(f"\n[INFO] Found {len(pt_files)} total .pt files in {pt_root}.")
+    # Inspect the first 3 files
+    for path in pt_files[:3]:
+        rel_path = os.path.relpath(path, pt_root)
+        print(f"\nInspecting: {rel_path}")
+        try:
+            tensor = torch.load(path)
+            print(f"  Type:  {type(tensor)}")
+            print(f"  Shape: {tensor.shape}")
+            print(f"  Dtype: {tensor.dtype}")
+            print("  Content (First 5 ticks):")
+            print(tensor[:5])
+        except Exception as e:
+            print(f"  Error loading file: {e}")
