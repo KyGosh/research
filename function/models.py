@@ -1,6 +1,7 @@
 import math
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class PositionalEncoding(nn.Module):
@@ -144,9 +145,93 @@ class MultiClassHead(nn.Module):
     def forward(self, x):
         return self.mlp(x)
 
-class UnifiedModel(nn.Module):
-    def __init__(self, input_dim: int, hidden_dim: int = 128, num_layers: int = 2, bidirectional: bool = False, dropout: float = 0.1, num_classes: int = None, use_attention: bool = False, arch: str = 'lstm'):
+
+class ArcMarginProduct(nn.Module):
+    """
+    ArcFace (Additive Angular Margin Loss) Classification Head.
+    Normalized input and weight vectors are used to compute cosine similarity,
+    and an angular margin penalty is added to the target angle.
+    """
+    def __init__(self, in_features: int, out_features: int, s: float = 30.0, m: float = 0.50, easy_margin: bool = False):
         super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.s = s
+        self.m = m
+        self.weight = nn.Parameter(torch.FloatTensor(out_features, in_features))
+        nn.init.xavier_uniform_(self.weight)
+
+        self.easy_margin = easy_margin
+        self.cos_m = math.cos(m)
+        self.sin_m = math.sin(m)
+        self.th = math.cos(math.pi - m)
+        self.mm = math.sin(math.pi - m) * m
+
+    def forward(self, input, label=None):
+        # 1. L2 normalize weights and input features
+        cosine = F.linear(F.normalize(input), F.normalize(self.weight))
+        
+        # During evaluation (or if label is not provided), return scaled cosine similarity
+        if label is None:
+            return cosine * self.s
+
+        # 2. Compute sine: sin(theta) = sqrt(1 - cos^2(theta))
+        sine = torch.sqrt(1.0 - torch.pow(cosine, 2)).clamp(0.0, 1.0)
+        
+        # 3. cos(theta + m) = cos(theta)*cos(m) - sin(theta)*sin(m)
+        phi = cosine * self.cos_m - sine * self.sin_m
+        
+        # 4. Handle boundary condition (ensure theta + m <= pi)
+        if self.easy_margin:
+            phi = torch.where(cosine > 0, phi, cosine)
+        else:
+            phi = torch.where(cosine > self.th, phi, cosine - self.mm)
+            
+        # 5. Create target class mask
+        one_hot = torch.zeros(cosine.size(), device=input.device)
+        one_hot.scatter_(1, label.view(-1, 1).long(), 1)
+        
+        # 6. Apply margin to targets only, scale all by s
+        output = (one_hot * phi) + ((1.0 - one_hot) * cosine)
+        output *= self.s
+        return output
+
+
+class FeatureSEBlock(nn.Module):
+    """
+    Squeeze-and-Excitation (SE) Block adapted for 1D input features.
+    Computes dynamic channel/feature attention weights per sample.
+    """
+    def __init__(self, num_features: int):
+        super().__init__()
+        reduction_dim = max(1, num_features // 2)
+        self.fc = nn.Sequential(
+            nn.Linear(num_features, reduction_dim),
+            nn.ReLU(),
+            nn.Linear(reduction_dim, num_features),
+            nn.Sigmoid()
+        )
+        self.last_weights = None  # Cache for feature importance analysis
+
+    def forward(self, x):
+        # x shape: [Batch, SequenceLength, NumFeatures]
+        # Squeeze: Global Average Pooling along sequence dimension (dim=1)
+        w = x.mean(dim=1)  # [B, C]
+        # Excitation
+        w = self.fc(w)     # [B, C]
+        # Cache weights detached to avoid memory leak during evaluation
+        self.last_weights = w.detach()
+        # Scale: Multiply input by channel weights along C dimension
+        return x * w.unsqueeze(1)
+
+
+class UnifiedModel(nn.Module):
+    def __init__(self, input_dim: int, hidden_dim: int = 128, num_layers: int = 2, bidirectional: bool = False, dropout: float = 0.1, num_classes: int = None, use_attention: bool = False, arch: str = 'lstm', use_arcface: bool = False, use_se: bool = False):
+        super().__init__()
+        self.use_se = use_se
+        if use_se:
+            self.se = FeatureSEBlock(input_dim)
+
         if arch == 'lstm':
             self.enc = LSTMEncoder(input_dim, hidden_dim, num_layers, bidirectional, dropout, use_attention)
             out_dim = hidden_dim * (2 if bidirectional else 1)
@@ -162,11 +247,23 @@ class UnifiedModel(nn.Module):
         if num_classes is None:
             self.head = BinaryHead(out_dim)
         else:
-            self.head = MultiClassHead(out_dim, num_classes)
+            if use_arcface:
+                self.head = ArcMarginProduct(out_dim, num_classes)
+            else:
+                self.head = MultiClassHead(out_dim, num_classes)
 
-    def forward(self, x):
+    def forward(self, x, label=None):
+        if self.use_se:
+            x = self.se(x)
         z = self.enc(x)
-        return self.head(z)
+        if isinstance(self.head, ArcMarginProduct):
+            if self.training and label is not None:
+                # Return (penalized_logits, clean_logits) during training
+                return self.head(z, label), self.head(z)
+            else:
+                return self.head(z)
+        else:
+            return self.head(z)
 
 
 class FusionModel(nn.Module):

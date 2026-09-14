@@ -34,6 +34,8 @@ USE_ATTENTION = cfg["model"]["use-attention"]
 NUM_LAYERS = cfg["model"]["num-layers"]
 EPOCH = cfg["model"]["epochs"]
 ARCH = cfg["model"].get("arch", "lstm")
+USE_ARCFACE = cfg["model"].get("use-arcface", False)
+USE_SE = cfg["model"].get("use-se", False)
 TASK = cfg.get("task", "authentication")
 
 def set_seed(s: int):
@@ -129,6 +131,7 @@ def evaluate_id(model, loader, device):
     model.eval()
     all_preds = []
     all_labels = []
+    all_weights = []
     
     with torch.no_grad():
         for xb, yb in loader:
@@ -137,6 +140,11 @@ def evaluate_id(model, loader, device):
             preds = torch.argmax(logits, dim=1)
             all_preds.extend(preds.cpu().numpy().tolist())
             all_labels.extend(yb.numpy().tolist())
+            
+            # If the model uses SE Block, cache the feature weights
+            if getattr(model, 'use_se', False) and hasattr(model, 'se'):
+                if model.se.last_weights is not None:
+                    all_weights.append(model.se.last_weights.cpu().numpy())
 
     preds_np = np.array(all_preds)
     labels_np = np.array(all_labels)
@@ -144,7 +152,8 @@ def evaluate_id(model, loader, device):
     acc = float(np.mean(preds_np == labels_np)) if labels_np.size > 0 else 0.0
     f1 = float(f1_score(labels_np, preds_np, average='macro')) if labels_np.size > 0 else 0.0
     
-    return acc, f1, preds_np, labels_np
+    weights_np = np.concatenate(all_weights, axis=0) if len(all_weights) > 0 else None
+    return acc, f1, preds_np, labels_np, weights_np
 
 
 def plot_far_frr(y_true, y_prob, save_path, title="FAR-FRR Curve"):
@@ -207,7 +216,8 @@ def train_fold(fold_idx, fold_data, device, plot_dir):
         num_layers=NUM_LAYERS,
         dropout=DROPOUT,
         use_attention=USE_ATTENTION,
-        arch=ARCH
+        arch=ARCH,
+        use_se=USE_SE
     ).to(device)
 
     opt = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=DECAY)
@@ -307,7 +317,9 @@ def train_fold_id(fold_idx, fold_data, device, plot_dir, class_names):
         dropout=DROPOUT,
         use_attention=USE_ATTENTION,
         num_classes=num_classes,
-        arch=ARCH
+        arch=ARCH,
+        use_arcface=USE_ARCFACE,
+        use_se=USE_SE
     ).to(device)
 
     opt = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=DECAY)
@@ -329,12 +341,18 @@ def train_fold_id(fold_idx, fold_data, device, plot_dir, class_names):
             yb = yb.to(device)
             opt.zero_grad()
 
-            logits = model(xb)
+            outputs = model(xb, yb)
+            if isinstance(outputs, tuple):
+                logits, clean_logits = outputs
+            else:
+                logits = outputs
+                clean_logits = logits
+                
             loss = loss_fn(logits, yb)
             loss.backward()
             opt.step()
 
-            preds = torch.argmax(logits, dim=1)
+            preds = torch.argmax(clean_logits, dim=1)
             train_preds.extend(preds.detach().cpu().numpy().tolist())
             train_labels.extend(yb.detach().cpu().numpy().tolist())
             train_losses.append(loss.item())
@@ -342,7 +360,7 @@ def train_fold_id(fold_idx, fold_data, device, plot_dir, class_names):
         train_loss = float(np.mean(train_losses))
         train_acc = float(np.mean(np.array(train_preds) == np.array(train_labels)))
 
-        vacc, vf1, _, _ = evaluate_id(model, val_loader, device)
+        vacc, vf1, _, _, _ = evaluate_id(model, val_loader, device)
         history["val_acc"].append(vacc)
 
         print(f"Epoch [{epoch + 1:02d}/{EPOCH}] Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} | Val Acc: {vacc:.4f}")
@@ -370,12 +388,74 @@ def train_fold_id(fold_idx, fold_data, device, plot_dir, class_names):
     plt.savefig(os.path.join(plot_dir, f"{fold_idx}_history.png"))
     plt.close()
 
-    tacc, tf1, preds_np, labels_np = evaluate_id(model, test_loader, device)
+    tacc, tf1, preds_np, labels_np, weights_np = evaluate_id(model, test_loader, device)
     cm_path = os.path.join(plot_dir, f"{fold_idx}_confusion_matrix.png")
     plot_confusion_matrix(labels_np, preds_np, class_names, cm_path, title=f"{fold_idx} Confusion Matrix")
 
     print(f"Fold {fold_idx} Test Final -> Accuracy: {tacc:.4f}, Macro-F1: {tf1:.4f}")
-    return {"val": {"acc": best_val_acc}, "test": {"acc": tacc, "f1": tf1}}
+    return {
+        "val": {"acc": best_val_acc},
+        "test": {"acc": tacc, "f1": tf1},
+        "weights": weights_np,
+        "labels": labels_np
+    }
+
+
+def visualize_feature_importance(all_weights, all_labels, class_names, feature_names, save_dir):
+    """
+    Generate and save:
+    1. Global Feature Importance Bar Chart
+    2. Player-specific Feature Signature Heatmap
+    3. feature_importance.json raw output
+    """
+    # 1. Global Feature Importance Bar Chart
+    mean_weights = np.mean(all_weights, axis=0)
+    indices = np.argsort(mean_weights)[::-1]
+    sorted_features = [feature_names[i] for i in indices]
+    sorted_weights = mean_weights[indices]
+
+    plt.figure(figsize=(10, 6))
+    sns.barplot(x=sorted_weights, y=sorted_features, palette="Blues_r")
+    plt.title("Global Feature Importance (Attention Weights)", fontsize=14, fontweight="bold", pad=15)
+    plt.xlabel("Average Attention Weight", fontsize=12)
+    plt.ylabel("Features", fontsize=12)
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, "feature_importance_bar.png"), dpi=300)
+    plt.close()
+
+    # 2. Player-specific Feature Signature Heatmap
+    num_classes = len(class_names)
+    player_weights = []
+    for c_idx in range(num_classes):
+        mask = (all_labels == c_idx)
+        if np.any(mask):
+            class_mean = np.mean(all_weights[mask], axis=0)
+        else:
+            class_mean = np.zeros(len(feature_names))
+        player_weights.append(class_mean)
+    player_weights = np.array(player_weights)
+
+    plt.figure(figsize=(12, 8))
+    sns.heatmap(player_weights, annot=True, fmt=".3f", cmap="YlGnBu",
+                xticklabels=feature_names, yticklabels=class_names)
+    plt.title("Player-specific Feature Signature (Average Attention)", fontsize=14, fontweight="bold", pad=15)
+    plt.xlabel("Features", fontsize=12)
+    plt.ylabel("Players", fontsize=12)
+    plt.xticks(rotation=45, ha="right")
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, "player_feature_signature_heatmap.png"), dpi=300)
+    plt.close()
+
+    # 3. Save raw metrics as JSON
+    raw_analysis = {
+        "global_importance": {f: float(w) for f, w in zip(feature_names, mean_weights)},
+        "player_importance": {}
+    }
+    for c_idx, name in enumerate(class_names):
+        raw_analysis["player_importance"][name] = {f: float(w) for f, w in zip(feature_names, player_weights[c_idx])}
+        
+    with open(os.path.join(save_dir, "feature_importance.json"), "w", encoding="utf-8") as f:
+        json.dump(raw_analysis, f, indent=4, ensure_ascii=False)
 
 
 def main():
@@ -389,9 +469,9 @@ def main():
     exp_dir = cfg["path"]["result"]
     
     if TASK == "identification":
-        run_folder = f"identification_{TYPE}_{time_str}"
+        run_folder = f"identification_{ARCH}_{TYPE}_{time_str}"
     else:
-        run_folder = f"authentication_{TARGET}_{TYPE}_{time_str}"
+        run_folder = f"authentication_{TARGET}_{ARCH}_{TYPE}_{time_str}"
         
     plot_dir = os.path.join(exp_dir, run_folder)
     os.makedirs(plot_dir, exist_ok=True)
@@ -498,6 +578,29 @@ def main():
         plt.tight_layout()
         plt.savefig(os.path.join(plot_dir, "summary_performance.png"))
         plt.close()
+
+        # Feature Importance Visualization if SE is enabled
+        if USE_SE:
+            all_fold_weights = []
+            all_fold_labels = []
+            for res in results:
+                if "weights" in res and res["weights"] is not None:
+                    all_fold_weights.append(res["weights"])
+                    all_fold_labels.append(res["labels"])
+            
+            if len(all_fold_weights) > 0:
+                global_weights = np.concatenate(all_fold_weights, axis=0)
+                global_labels = np.concatenate(all_fold_labels, axis=0)
+                
+                if TYPE == "keyboard":
+                    feature_names = ["is_walking", "BACK", "RIGHT", "FORWARD", "LEFT"]
+                elif TYPE == "mouse":
+                    feature_names = ["FIRE", "dp", "dy", "speed", "acc", "jerk"]
+                else:
+                    feature_names = ["is_walking", "BACK", "RIGHT", "FORWARD", "LEFT", "FIRE", "dp", "dy", "speed", "acc", "jerk"]
+                
+                visualize_feature_importance(global_weights, global_labels, class_names, feature_names, plot_dir)
+                print(f"Feature importance analysis plots and JSON saved to {plot_dir}")
     else:
         print(f"\n================== FINAL RESULTS ==================\nAvg Test AUC: {avg_auc:.4f}, Avg Test EER: {avg_eer:.4f}")
         # Summary Plot

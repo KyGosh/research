@@ -56,8 +56,8 @@ def process_map_data(map_idx, mouse_dir, time_dir):
 
     return pd.concat(filtered_chunks, axis=0)
 
-def discretize_mouse_data(df: pd.DataFrame) -> pd.DataFrame:
-    with open("d:\\Project\\Research\\output\\discretized_level_log.json", "r") as f:
+def discretize_mouse_data(df: pd.DataFrame, config_path: str = "d:\\Project\\Research\\output\\discretized_level_log.json") -> pd.DataFrame:
+    with open(config_path, "r", encoding="utf-8") as f:
         config = json.load(f)
 
     for feature, level in config.items():
@@ -70,6 +70,7 @@ def discretize_mouse_data(df: pd.DataFrame) -> pd.DataFrame:
         raw_v = np.log1p(raw_v.abs())
         q_bins = np.array(level)
 
+        # True / False 序列
         inf_mask = raw_v > 1e-6
         bins = pd.Series(0.0, index=df.index)
 
