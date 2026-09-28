@@ -1,7 +1,17 @@
 import json
 import random
+import re
 import yaml
 from pathlib import Path
+
+def extract_sort_key(sample, player_name=""):
+    path_str = sample.get("path", "")
+    match_id = sample.get("match_id", sample.get("map", ""))
+    filename = Path(path_str).stem
+    m = re.search(r"r(\d+)_seg(\d+)", filename)
+    if m:
+        return (player_name, str(match_id), int(m.group(1)), int(m.group(2)), filename)
+    return (player_name, str(match_id), 0, 0, filename)
 
 def load_json(path):
     with open(path, 'r', encoding='utf-8') as f:
@@ -19,13 +29,14 @@ def freeze_dataset(input_dir, output_dir, target_player, data_type, total_folds=
 
     # 1. Gather all manifests
     player_manifests = {}
-    for p_dir in input_root.iterdir():
+    for p_dir in sorted(list(input_root.iterdir())):
         manifest_path = p_dir / "manifest.json"
         if p_dir.is_dir() and manifest_path.exists():
             all_samples = load_json(manifest_path)
             # Filter type (mouse/keyboard/combined)
             typed_samples = [s for s in all_samples if s['type'] == data_type]
             if typed_samples:
+                typed_samples.sort(key=lambda s: extract_sort_key(s, p_dir.name))
                 player_manifests[p_dir.name] = typed_samples
 
     if target_player not in player_manifests:
@@ -59,7 +70,7 @@ def freeze_dataset(input_dir, output_dir, target_player, data_type, total_folds=
         pos_valid = [s['path'] for s in pos_samples if s[map_key_name] == valid_map]
         pos_test = [s['path'] for s in pos_samples if s[map_key_name] == test_map]
 
-        neg_players = [p for p in player_manifests.keys() if p != target_player]
+        neg_players = sorted([p for p in player_manifests.keys() if p != target_player])
         neg_train_all = []
         neg_valid_all = []
         neg_test_all = []
@@ -110,7 +121,7 @@ def freeze_dataset_id(input_dir, output_dir, data_type, total_folds=10):
 
     # 1. Gather all manifests, skipping players with insufficient matches
     player_manifests = {}
-    for p_dir in input_root.iterdir():
+    for p_dir in sorted(list(input_root.iterdir())):
         manifest_path = p_dir / "manifest.json"
         if p_dir.is_dir() and manifest_path.exists():
             all_samples = load_json(manifest_path)
@@ -122,6 +133,7 @@ def freeze_dataset_id(input_dir, output_dir, data_type, total_folds=10):
                 if len(match_keys) < 3:
                     print(f"[WARNING] Player '{p_dir.name}' only has {len(match_keys)} match(es). Insufficient data to perform cross-validation. Skipping player.")
                     continue
+                typed_samples.sort(key=lambda s: extract_sort_key(s, p_dir.name))
                 player_manifests[p_dir.name] = typed_samples
 
     # Dynamically build player list from the actual folders in the dataset
@@ -167,7 +179,8 @@ def freeze_dataset_id(input_dir, output_dir, data_type, total_folds=10):
         valid_paths, valid_labels = [], []
         test_paths, test_labels = [], []
 
-        for p_name, chunks in player_chunks.items():
+        for p_name in players_list:
+            chunks = player_chunks[p_name]
             label = player_to_label[p_name]
             samples = player_manifests[p_name]
             map_key_name = 'match_id' if 'match_id' in samples[0] else 'map'

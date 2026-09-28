@@ -40,6 +40,8 @@ CONFIG = load_config()
 def main():
     
     TASK = CONFIG.get("task", "authentication")
+    ENSEMBLE_ENABLED = CONFIG.get("ensemble", {}).get("enabled", False)
+    train_script = "train_ensemble.py" if ENSEMBLE_ENABLED else "train_model.py"
 
     if TASK == "identification":
         # Multi-class Identification Pipeline (using direct-to-tensor parsing)
@@ -47,7 +49,7 @@ def main():
             "parse": "parse_demo_to_pt.py",
             "manifest": "pt_file_list.py",
             "freeze": "freezing_dataset.py",
-            "train": "train_model.py"
+            "train": train_script
         }
         WAY = CONFIG["way"]
         if WAY == "model":
@@ -63,7 +65,7 @@ def main():
             "convert": "convert_pt.py",
             "manifest": "pt_file_list.py",
             "freeze": "freezing_dataset.py",
-            "train": "train_model.py"
+            "train": train_script
         }
         WAY = CONFIG["way"]
         if WAY == "model":

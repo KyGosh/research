@@ -67,6 +67,15 @@ model:
 way: "model" # "model" or "dataset" or "all"
 task: "identification" # "authentication" or "identification"
 
+# Incremental ensemble flag (defaults to false for backward compatibility)
+ensemble:
+  enabled: true
+  modalities:
+    - keyboard
+    - mouse
+    - combined
+  soft_vote_grid_step: 0.05
+
 defaults:
   parallel: 1
   verbose: false

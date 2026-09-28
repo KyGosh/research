@@ -124,7 +124,7 @@ def evaluate(model, loader, device):
     return acc, auc, eer, pr, gt
 
 
-def evaluate_id(model, loader, device):
+def evaluate_id(model, loader, device, return_probs=False):
     """
     Evaluation for multi-class identification.
     """
@@ -132,14 +132,18 @@ def evaluate_id(model, loader, device):
     all_preds = []
     all_labels = []
     all_weights = []
+    all_probs = []
     
     with torch.no_grad():
         for xb, yb in loader:
             xb = xb.to(device)
             logits = model(xb)
+            probs = torch.softmax(logits, dim=-1)
             preds = torch.argmax(logits, dim=1)
             all_preds.extend(preds.cpu().numpy().tolist())
             all_labels.extend(yb.numpy().tolist())
+            if return_probs:
+                all_probs.extend(probs.cpu().numpy().tolist())
             
             # If the model uses SE Block, cache the feature weights
             if getattr(model, 'use_se', False) and hasattr(model, 'se'):
@@ -153,6 +157,9 @@ def evaluate_id(model, loader, device):
     f1 = float(f1_score(labels_np, preds_np, average='macro')) if labels_np.size > 0 else 0.0
     
     weights_np = np.concatenate(all_weights, axis=0) if len(all_weights) > 0 else None
+    if return_probs:
+        probs_np = np.array(all_probs)
+        return acc, f1, preds_np, labels_np, weights_np, probs_np
     return acc, f1, preds_np, labels_np, weights_np
 
 
@@ -196,7 +203,8 @@ def plot_confusion_matrix(y_true, y_pred, class_names, save_path, title="Confusi
     plt.close()
 
 
-def train_fold(fold_idx, fold_data, device, plot_dir):
+def train_fold(fold_idx, fold_data, device, plot_dir, return_preds=False):
+    os.makedirs(plot_dir, exist_ok=True)
     print(f"\n--- Fold {fold_idx} (Test Session/Map) ---")
 
     train_ds = ManifestDataset(fold_data["train"]["pos"], fold_data["train"]["neg"], desc=f"Fold {fold_idx} Train")
@@ -291,10 +299,15 @@ def train_fold(fold_idx, fold_data, device, plot_dir):
     plot_far_frr(gt, pr, far_frr_path, title=f"Fold {fold_idx} (Map: {fold_data.get('test_map', 'unknown')}) FAR-FRR")
 
     print(f"{fold_idx} Test Final -> AUC: {tauc:.4f}, EER: {teer:.4f}")
-    return {"val": {"auc": best_val_auc}, "test": {"acc": tacc, "auc": tauc, "eer": teer}}
+    res = {"val": {"auc": best_val_auc}, "test": {"acc": tacc, "auc": tauc, "eer": teer}}
+    if return_preds:
+        vacc, vauc, veer, val_pr, val_gt = evaluate(model, val_loader, device)
+        return res, val_pr, val_gt, pr, gt
+    return res
 
 
-def train_fold_id(fold_idx, fold_data, device, plot_dir, class_names):
+def train_fold_id(fold_idx, fold_data, device, plot_dir, class_names, return_preds=False):
+    os.makedirs(plot_dir, exist_ok=True)
     print(f"\n--- Fold {fold_idx} (Test Session/Map) ---")
     num_classes = len(class_names)
 
@@ -388,17 +401,25 @@ def train_fold_id(fold_idx, fold_data, device, plot_dir, class_names):
     plt.savefig(os.path.join(plot_dir, f"{fold_idx}_history.png"))
     plt.close()
 
-    tacc, tf1, preds_np, labels_np, weights_np = evaluate_id(model, test_loader, device)
+    if return_preds:
+        tacc, tf1, preds_np, labels_np, weights_np, test_probs = evaluate_id(model, test_loader, device, return_probs=True)
+    else:
+        tacc, tf1, preds_np, labels_np, weights_np = evaluate_id(model, test_loader, device, return_probs=False)
+
     cm_path = os.path.join(plot_dir, f"{fold_idx}_confusion_matrix.png")
     plot_confusion_matrix(labels_np, preds_np, class_names, cm_path, title=f"{fold_idx} Confusion Matrix")
 
     print(f"Fold {fold_idx} Test Final -> Accuracy: {tacc:.4f}, Macro-F1: {tf1:.4f}")
-    return {
+    res = {
         "val": {"acc": best_val_acc},
         "test": {"acc": tacc, "f1": tf1},
         "weights": weights_np,
         "labels": labels_np
     }
+    if return_preds:
+        _, _, _, val_labels, _, val_probs = evaluate_id(model, val_loader, device, return_probs=True)
+        return res, val_probs, val_labels, test_probs, labels_np
+    return res
 
 
 def visualize_feature_importance(all_weights, all_labels, class_names, feature_names, save_dir):
