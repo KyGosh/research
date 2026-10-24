@@ -111,7 +111,11 @@ def freeze_dataset(input_dir, output_dir, target_player, data_type, total_folds=
 
 def freeze_dataset_id(input_dir, output_dir, data_type, total_folds=10):
     """
-    Option B Match-Based Chronological 8:1:1 multi-class split logic for player identification.
+    Match-Based multi-class split logic for player identification.
+    Split ratio:
+      - n_matches >= 10: 8 : 1 : x (8 train, 1 valid, remaining n_matches - 9 to test)
+      - n_matches < 10:  x : 1 : 1 (n_matches - 2 to train, 1 valid, 1 test)
+      - Insufficient matches (< 3): Skipped (retaining original behavior)
     """
     input_root = Path(input_dir)
     output_root = Path(output_dir)
@@ -119,7 +123,7 @@ def freeze_dataset_id(input_dir, output_dir, data_type, total_folds=10):
 
     random.seed(42)
 
-    # 1. Gather all manifests, skipping players with insufficient matches
+    # 1. Gather all manifests, skipping players with insufficient matches (< 5)
     player_manifests = {}
     for p_dir in sorted(list(input_root.iterdir())):
         manifest_path = p_dir / "manifest.json"
@@ -145,33 +149,14 @@ def freeze_dataset_id(input_dir, output_dir, data_type, total_folds=10):
         "class_mapping": player_to_label
     }
 
-    # Define chunk splits for each player
-    player_chunks = {}
+    # Pre-extract sorted unique match keys for each player
+    player_match_keys = {}
     for p_name, samples in player_manifests.items():
-        # Get unique match keys (backward compatibility check for match_id vs map)
         map_key_name = 'match_id' if 'match_id' in samples[0] else 'map'
         match_keys = sorted(list(set([s[map_key_name] for s in samples])))
-        n_matches = len(match_keys)
-        
-        chunks = []
-        if n_matches < total_folds:
-            # Case 1: Fewer matches than folds. Split at match level and pad with modulo.
-            temp_chunks = [[m] for m in match_keys]
-            for i in range(total_folds):
-                chunks.append(temp_chunks[i % n_matches])
-        else:
-            # Case 2: Enough matches to distribute. Divide matches as evenly as possible.
-            base_size = n_matches // total_folds
-            rem = n_matches % total_folds
-            start = 0
-            for i in range(total_folds):
-                size = base_size + (1 if i < rem else 0)
-                chunks.append(match_keys[start : start + size])
-                start += size
-                
-        player_chunks[p_name] = chunks
+        player_match_keys[p_name] = match_keys
 
-    # 3. Compile Folds
+    # 2. Compile Folds
     for f_idx in range(total_folds):
         fold_key = f"fold_{f_idx + 1}"
         
@@ -180,18 +165,30 @@ def freeze_dataset_id(input_dir, output_dir, data_type, total_folds=10):
         test_paths, test_labels = [], []
 
         for p_name in players_list:
-            chunks = player_chunks[p_name]
             label = player_to_label[p_name]
             samples = player_manifests[p_name]
             map_key_name = 'match_id' if 'match_id' in samples[0] else 'map'
+            match_keys = player_match_keys[p_name]
+            n_matches = len(match_keys)
 
-            test_matches = chunks[f_idx]
-            valid_matches = chunks[(f_idx + 1) % total_folds]
-            
-            test_set = set(test_matches)
-            # Ensure valid set does not overlap with test set
-            valid_set = set(valid_matches) - test_set
-            
+            if n_matches >= 10:
+                # 8 : 1 : x 策略 (>= 10 场：8 场训练，1 场验证，剩余全部放入测试集)
+                valid_idx = (f_idx + 1) % n_matches
+                valid_set = {match_keys[valid_idx]}
+
+                train_indices = [(f_idx + 2 + i) % n_matches for i in range(8)]
+                train_set = {match_keys[i] for i in train_indices}
+
+                test_set = set(match_keys) - train_set - valid_set
+            else:
+                # x : 1 : 1 策略 (< 10 场：1 场测试，1 场验证，剩余全部作为训练集)
+                test_idx = f_idx % n_matches
+                valid_idx = (f_idx + 1) % n_matches
+                test_set = {match_keys[test_idx]}
+                valid_set = {match_keys[valid_idx]}
+
+                train_set = set(match_keys) - test_set - valid_set
+
             # Group all samples of this player
             for s in samples:
                 m_id = s[map_key_name]
@@ -201,7 +198,7 @@ def freeze_dataset_id(input_dir, output_dir, data_type, total_folds=10):
                 elif m_id in valid_set:
                     valid_paths.append(s['path'])
                     valid_labels.append(label)
-                else:
+                elif m_id in train_set:
                     train_paths.append(s['path'])
                     train_labels.append(label)
 

@@ -13,7 +13,7 @@ from function.util_func import discretize_mouse_data
 with open("../setting.yaml", "r", encoding="utf-8") as f:
     cfg = yaml.safe_load(f)
 
-DEMO_DIR = cfg["path"].get("demos", "d:\\Project\\cs2_parser\\demoparser\\demo_file")
+DEMO_DIR = cfg["path"].get("demos", "d:\\Project\\demo_file")
 PT_DIR_ROOT = cfg["path"]["pt"]
 WINDOW_SIZE = cfg["time-window"]
 OVERLAP_RATIO = cfg["overlap-ratio"]
@@ -25,11 +25,14 @@ def parse_single_demo(demo_path):
     print(f"Processing Demo: {filename}")
     print(f"==================================================")
 
-    # 1. Initialize Parser
-    parser = DemoParser(demo_path)
+    # 1. Initialize Parser & Extract Metadata from Demo Header
+    try:
+        parser = DemoParser(demo_path)
+        header = parser.parse_header()
+    except Exception as e:
+        print(f"[ERROR] Failed initializing parser or reading header ({e}). Skipping demo.")
+        return
 
-    # 2. Extract Metadata from Demo Header & Filename
-    header = parser.parse_header()
     map_name = header.get("map_name", "unknown_map")
 
     # Date from file system modification time
@@ -70,10 +73,14 @@ def parse_single_demo(demo_path):
     if tick_rate <= 0:
         tick_rate = 64.0
 
-    df_start = parser.parse_event("round_start")
-    df_freeze = parser.parse_event("round_freeze_end")
-    df_end = parser.parse_event("round_end")
-    df_official = parser.parse_event("round_officially_ended")
+    try:
+        df_start = parser.parse_event("round_start")
+        df_freeze = parser.parse_event("round_freeze_end")
+        df_end = parser.parse_event("round_end")
+        df_official = parser.parse_event("round_officially_ended")
+    except Exception as e:
+        print(f"[ERROR] Failed parsing round events ({e}). The demo may be corrupted or malformed. Skipping demo.")
+        return
 
     # Extract ticks as sorted lists of integers
     start_ticks = sorted([int(t) for t in df_start["tick"].values]) if not df_start.empty else []
@@ -132,13 +139,17 @@ def parse_single_demo(demo_path):
     df_telemetry["acc"] = df_telemetry.groupby("name")["speed"].diff()
     df_telemetry["jerk"] = df_telemetry.groupby("name")["acc"].diff()
 
-    df_telemetry = df_telemetry.bfill().fillna(0)
-    df_telemetry = discretize_mouse_data(df_telemetry)
-
     # 6. Convert Bool/Obj Columns to Numeric
     for col in ["FORWARD", "BACK", "LEFT", "RIGHT", "is_walking", "FIRE"]:
         if col in df_telemetry.columns:
             df_telemetry[col] = df_telemetry[col].astype(float)
+
+    # Fill NA only on numeric motion and input features (avoid downcasting warnings on object columns like name)
+    num_cols = ["dp", "dy", "speed", "acc", "jerk", "FORWARD", "BACK", "LEFT", "RIGHT", "is_walking", "FIRE"]
+    valid_num_cols = [c for c in num_cols if c in df_telemetry.columns]
+    df_telemetry[valid_num_cols] = df_telemetry[valid_num_cols].bfill().fillna(0)
+
+    df_telemetry = discretize_mouse_data(df_telemetry)
 
     # Define feature selections
     keyboard_cols = ["is_walking", "BACK", "RIGHT", "FORWARD", "LEFT"]
@@ -211,7 +222,10 @@ def main():
 
     print(f"Found {len(demo_files)} CS2 demo files in {DEMO_DIR}.")
     for demo in demo_files:
-        parse_single_demo(demo)
+        try:
+            parse_single_demo(demo)
+        except Exception as e:
+            print(f"[ERROR] Unexpected error while processing {os.path.basename(demo)}: {e}")
     print("\n[SUCCESS] Direct-to-Tensor parsing pipeline completed successfully.")
 
 if __name__ == "__main__":

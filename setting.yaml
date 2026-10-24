@@ -34,7 +34,7 @@ time-window: 640
 fold: 10
 
 path:
-  demos: "d:\\Project\\cs2_parser\\demoparser\\demo_file"
+  demos: "d:\\Project\\demo_file"
 
   origin: "d:\\Project\\Research\\dataset\\origin_data"
   mouse: "d:\\Project\\Research\\dataset\\origin_data\\mouse_data_f_f"
@@ -73,7 +73,7 @@ ensemble:
   modalities:
     - keyboard
     - mouse
-    - combined
+    #- combined
   soft_vote_grid_step: 0.05
 
 defaults:

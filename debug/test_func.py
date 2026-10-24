@@ -1,8 +1,10 @@
 import os
-
+from collections import defaultdict
+import yaml
 import pytest
 import torch
 import matplotlib.pyplot as plt
+from demoparser2 import DemoParser, WantedPropState
 
 def test_map_func():
     from function.util_func import get_maps
@@ -68,7 +70,7 @@ def test_graph_size():
 
 
 def test_new_pt_file():
-    pt_root = "D:\\Project\\Research\\dataset\\pt_data"
+    pt_root = "D:\\Project\\Research\\dataset\\pt_data\\ Lucyyyyy"
     if not os.path.exists(pt_root):
         print(f"\n[ERROR] pt_root directory does not exist: {pt_root}")
         return
@@ -97,3 +99,55 @@ def test_new_pt_file():
             print(tensor[:5])
         except Exception as e:
             print(f"  Error loading file: {e}")
+
+
+def test_count_player_demos():
+    """测试检索所有 demo 文件中每名玩家对应的 demo 数量"""
+    demo_dir = "d:\\Project\\demo_file\\leisure"
+
+    if not os.path.exists(demo_dir):
+        print(f"[ERROR] Demos directory does not exist: {demo_dir}")
+        return
+
+    # 1. 递归查找所有 .dem 文件（与 parse_demo_to_pt.py 保持一致）
+    demo_files = []
+    for root, _, files in os.walk(demo_dir):
+        for file in files:
+            if file.endswith(".dem"):
+                demo_files.append(os.path.join(root, file))
+
+    print(f"\nFound {len(demo_files)} CS2 demo files in {demo_dir}.")
+    if not demo_files:
+        return
+
+    player_counts = defaultdict(int)
+
+    # 2. 遍历每个 demo 文件，获取该 demo 中的玩家
+    for idx, demo_path in enumerate(demo_files, 1):
+        filename = os.path.basename(demo_path)
+        print(f"[{idx}/{len(demo_files)}] Parsing demo: {filename}")
+        try:
+            parser = DemoParser(demo_path)
+            # 优先使用高效的 parse_player_info()
+            player_info = parser.parse_player_info()
+            if player_info is not None and not player_info.empty and "name" in player_info.columns:
+                demo_players = set(player_info["name"].dropna().unique())
+            else:
+                # 备用方案：按 parse_demo_to_pt.py 的 WantedPropState("is_alive", True) 提取
+                df_telemetry = parser.parse_ticks(["name"], prop_states=[WantedPropState("is_alive", True)])
+                demo_players = set(df_telemetry["name"].dropna().unique()) if not df_telemetry.empty else set()
+        except Exception as e:
+            print(f"[WARNING] Failed parsing demo {filename}: {e}")
+            continue
+
+        for player_name in demo_players:
+            if player_name and isinstance(player_name, str) and player_name.strip():
+                player_counts[player_name] += 1
+
+    # 打印排版整齐的统计结果
+    print("\n" + "=" * 40)
+    print(f"{'Player Name':<25} | {'Demo Count':<10}")
+    print("=" * 40)
+    for player, count in sorted(player_counts.items(), key=lambda x: x[1], reverse=True):
+        print(f"{player:<25} | {count:<10}")
+    print("=" * 40 + "\n")
